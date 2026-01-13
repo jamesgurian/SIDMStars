@@ -1,11 +1,13 @@
 
-@kwdef struct RunParams{QuantitySigma, QuantityL, QuantityV, QuantityT, QuantityRho}
-    C::Float64 # Newton's Constant (G) in compatible units (float magnitude)
-    σ0::QuantitySigma
-    w::QuantityV
+@kwdef struct RunParams
+    C::Float64 
+    σ0::Float64
+    w::Float64
     n::Float64
-    t_end::QuantityT
-    rho_initial::FunctionWrapper{QuantityRho, Tuple{QuantityL}} 
-    r_max::QuantityL
-    r_min::QuantityL
+    t_end::Float64
+    r_max::Float64
+    r_min::Float64
+    r_s::Float64
+    rho_s::Float64
 end
+

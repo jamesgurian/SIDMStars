@@ -13,6 +13,7 @@ using DifferentialEquations
 import BoundaryValueDiffEq as BVP
 using Unitful
 using UnitfulAstro
+using ForwardDiff
 using SpecialFunctions
 using QuadGK
 using FunctionWrappers
