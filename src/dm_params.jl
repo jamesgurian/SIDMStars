@@ -7,7 +7,5 @@
     t_end::Float64
     r_max::Float64
     r_min::Float64
-    r_s::Float64
-    rho_s::Float64
 end
 

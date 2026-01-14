@@ -1,13 +1,11 @@
-using FunctionWrappers
-import FunctionWrappers:FunctionWrapper
+
 using Unitful
 using UnitfulAstro
 include("../src/SIDMStars.jl")
 using Revise
 using .SIDMStars
-rho_0 = 1.0e7#u"Msun/kpc^3"
-R_s = 1.0#u"kpc"
-  
+using PyPlot
+
 
     
 
@@ -20,9 +18,9 @@ dm_params = RunParams(
     n = 1.0,
     t_end = 10.0,
     r_max = ustrip(100.0u"kpc"),
-    r_min = ustrip(1.0e-3u"kpc"),
-    r_s=R_s,
-    rho_s=1e7
+    r_min = ustrip(1.0e-3u"kpc")
 )
-
-sol = initialize_profile(dm_params);
+sol_init = initialize_profile(dm_params, x-> nfw_profile(1, 1e8, x), p_outer=0.)
+#semilogx(sol[1].t, sol[2].(sol[1].t))
+savefig("out.png")
+sol = evolve(dm_params, x -> nfw_profile(1, 1.0e8, x));

@@ -10,6 +10,7 @@ A lightweight Julia package layout for SIDM star structure and boundary-value pr
 module SIDMStars
 using LinearAlgebra
 using DifferentialEquations
+using NonlinearSolve
 import BoundaryValueDiffEq as BVP
 using Unitful
 using UnitfulAstro
@@ -25,6 +26,7 @@ include("dm_params.jl")
 include("transport.jl")
 include("util.jl")
 include("init.jl")
+include("evolve.jl")
 module Constants
         using PhysicalConstants
         using ..SIDMStars: @import_everything
@@ -34,7 +36,8 @@ module Constants
 export RunParams
 export initialize_profile
 export Constants
-
+export nfw_profile
+export evolve
 # Include implementation files (place implementation in src/bvp.jl)
 
 
