@@ -21,25 +21,24 @@ function structure_system!(du,u,p,m)
     du[3] = - 5/2 * L/(p.κ(P/ρ,ρ) * 16 * pi^2 * r^4* ρ) - du[2]/P 
     #du[4] = -P/ρ * (u[3] - p.s_prev(m))/p.dt
     du[4] = - P/ρ * p.dsdt(m)
-        println(du)
     end
 end
 
-function structure_system_T!(du,u,p,m)
-    r = u[1]
-    P = max(0, u[2]) #solve for log P
-    v2 = max(0., u[3]) #negative will throw error in sqrt
+function structure_system_T!(du,u,p,logm)
+    r = exp(u[1])
+    P = exp(u[2])
+    v2 = max(0,u[3])
     L = u[4]
-   # println("u_in", u)
+    m = exp(logm)
+
     ρ = P/v2
     s = log(v2^(3/2)/ρ)
-    du[1] = 1/(4 * pi * r^2 * ρ)
-    du[2] = - p.G * m /(4 * pi * r^4)
-    #du[3] = - 5/2 * L/(p.κ(P/ρ,ρ) * P * 16 * pi^2 * r^4) - du[2]/P 
-    #du[4] = -P/ρ * (u[3] - p.s_prev(m))/p.dt
-    du[3] = -L/(16 * pi^2 * r^4 * ρ * p.κ(v2, ρ))
-    du[4] = - v2 * p.dsdt(m)
-    #println("du_out", du)
+    du[1] = m/(4 * pi * r^3 * ρ)
+    du[2] = - p.G * m^2 /(4 * P * pi * r^4)
+
+    du[3] = -L*m/(16 * pi^2 * r^4 * ρ * p.κ(v2, ρ))
+    du[4] = -v2 * m * p.dsdt(m)
+
 end
 
 function bc_inner_general!(residual, u, p, r_inner, L_inner)
@@ -48,8 +47,8 @@ function bc_inner_general!(residual, u, p, r_inner, L_inner)
     residual[1] = u[1] - r_inner
     residual[2] = u[4] - L_inner
 
-    println("u, in", u)
-    println("residual", residual)
+    #println("u, in", u)
+   # println("residual", residual)
 
 end
 

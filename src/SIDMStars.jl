@@ -10,17 +10,18 @@ A lightweight Julia package layout for SIDM star structure and boundary-value pr
 module SIDMStars
 using LinearAlgebra
 using DifferentialEquations
-using NonlinearSolve
 import BoundaryValueDiffEq as BVP
-using Unitful
-using UnitfulAstro
 using ForwardDiff
 using SpecialFunctions
 using QuadGK
 using FunctionWrappers
 import FunctionWrappers:FunctionWrapper    
-
-
+using Unitful
+using UnitfulAstro
+using NonlinearSolve
+using Preferences
+using MINPACK 
+set_preferences!(ForwardDiff, "nansafe_mode" => true)
 include("bvp.jl")
 include("dm_params.jl")
 include("transport.jl")
