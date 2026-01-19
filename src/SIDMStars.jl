@@ -19,9 +19,6 @@ import FunctionWrappers:FunctionWrapper
 using Unitful
 using UnitfulAstro
 using NonlinearSolve
-using Preferences
-using MINPACK 
-set_preferences!(ForwardDiff, "nansafe_mode" => true)
 include("bvp.jl")
 include("dm_params.jl")
 include("transport.jl")

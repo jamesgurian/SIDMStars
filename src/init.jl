@@ -4,28 +4,6 @@ function nfw_profile(r_s, rho_0, r)
     x = r / r_s
     return rho_0 / (x * (1 + x)^2)
 end
-# The ODE system: du/dr = f(u, p, r)
-# u[1] = radius (r)
-# u[2] = Pressure (P)
-function hse_inward!(du, u, p, M)
-    r = u[1]
-    P = u[2]
-    
-    # Get density at current radius r
-    ρ = p.ρ_func(r)
-    # 1. Mass Conservation: dr/dm = 1/ (4πr^2ρ)
-    du[1] = 1/(4 * pi * r^2 * ρ )
-    # 2. Hydrostatic Equilibrium: dP/dm = -GMρ/r^2 (G=1)
-    du[2] = -(p.G * M  / (4*pi * r^4)) 
-
-
-   # du[3] - 2.5/(p.κ(v2) * P* 16*pi^2*r^4) - du[2] / (P)
-   # du[4] = -v2 * u[5]
-
-   # du[5] = s - log(P/ρ^(5/2))
-
-end
-
 function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_frac=1e-7)
     # Setup a Radial Grid 
     # Integrate Mass Outwards 
@@ -37,14 +15,31 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
     u0 = [run_params.r_max*safety_factor, p_outer]
 
     G = ustrip(uconvert(u"kpc*km^2/s^2/Msun", Constants.G))
-    ode_params = (ρ_func = rho_initial, 
-                    G = G)
-    
+    #ode_params = (ρ_func = rho_initial, 
+     #               G = G)
+    function hse_inward!(du, u, p, M)
+        r = u[1]
+        P = u[2]
+        
+        # Get density at current radius r
+        ρ = rho_initial(r)
+        # 1. Mass Conservation: dr/dm = 1/ (4πr^2ρ)
+        du[1] = 1/(4 * pi * r^2 * ρ )
+        # 2. Hydrostatic Equilibrium: dP/dm = -GMρ/r^2 (G=1)
+        du[2] = -(G * M  / (4*pi * r^4)) 
+
+
+    # du[3] - 2.5/(p.κ(v2) * P* 16*pi^2*r^4) - du[2] / (P)
+    # du[4] = -v2 * u[5]
+
+    # du[5] = s - log(P/ρ^(5/2))
+
+    end
 
     f = ODEFunction(hse_inward!)
-    prob = ODEProblem(hse_inward!,u0, M_span,ode_params)
+    prob = ODEProblem(hse_inward!,u0, M_span)
 
-    sol = solve(prob,Rodas5P(),reltol=1e-12)
+    sol = solve(prob,Rodas4P2(autodiff=false),reltol=1e-12)
     v2_func(m) = sol(m)[2]/(rho_initial(sol(m)[1]))
 
     dv2(m) = 1/rho_initial(sol(m)[1]) * sol(m, Val{1})[2] - 
@@ -60,3 +55,4 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
     t_kh = abs.(sol.t[2:end] .* v2_func.(sol.t[2:end]) ./ L_func.(sol.t[2:end]))
     return sol, L_func, s_func, dsdt, t_kh, M_tot
 end
+

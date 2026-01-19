@@ -1,35 +1,15 @@
-function structure_system!(du,u,p,m)
-    r = u[1]
-    P = (u[2]) #solve for log P
-    s = u[3]
-    L = u[4]
-    println()
-    println("m", m)
-    println(u)
-    #println("u_in", u)
-    ρ = P^(3/5) *exp(-2s/5)
-    println("rho", ρ)
-    #println("ρ", ρ)
-    if r < 1e-5
-        du[1] = 0
-        du[2] = 0
-        du[3] = 0
-        du[4] = 0 
-    else
-    du[1] = 1/(4 * pi * r^2 * ρ)
-    du[2] = - p.G * m /(4 * P * pi * r^4)
-    du[3] = - 5/2 * L/(p.κ(P/ρ,ρ) * 16 * pi^2 * r^4* ρ) - du[2]/P 
-    #du[4] = -P/ρ * (u[3] - p.s_prev(m))/p.dt
-    du[4] = - P/ρ * p.dsdt(m)
-    end
-end
+
 
 function structure_system_T!(du,u,p,logm)
+    #println(u)
     r = exp(u[1])
     P = exp(u[2])
     v2 = max(0,u[3])
-    L = u[4]
     m = exp(logm)
+       # println(m)
+
+    L = u[4] * p.L_scale
+
 
     ρ = P/v2
     s = log(v2^(3/2)/ρ)
@@ -37,7 +17,9 @@ function structure_system_T!(du,u,p,logm)
     du[2] = - p.G * m^2 /(4 * P * pi * r^4)
 
     du[3] = -L*m/(16 * pi^2 * r^4 * ρ * p.κ(v2, ρ))
-    du[4] = -v2 * m * p.dsdt(m)
+    println(m)
+    println(p.s_prev(m))
+    du[4] = -v2 * m *(s-p.s_prev(m))/(p.dt * p.L_scale)# p.s_prev(m)/p.L_scale
 
 end
 
