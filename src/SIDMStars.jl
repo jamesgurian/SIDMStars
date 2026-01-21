@@ -12,6 +12,7 @@ using LinearAlgebra
 using DifferentialEquations
 import BoundaryValueDiffEq as BVP
 using ForwardDiff
+using DataInterpolations
 using SpecialFunctions
 using QuadGK
 using FunctionWrappers
@@ -19,6 +20,7 @@ import FunctionWrappers:FunctionWrapper
 using Unitful
 using UnitfulAstro
 using NonlinearSolve
+using PyPlot
 include("bvp.jl")
 include("dm_params.jl")
 include("transport.jl")

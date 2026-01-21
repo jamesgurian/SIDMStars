@@ -5,6 +5,8 @@ function nfw_profile(r_s, rho_0, r)
     return rho_0 / (x * (1 + x)^2)
 end
 
+
+
 function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_frac=1e-7)
     # Setup a Radial Grid 
     # Integrate Mass Outwards 

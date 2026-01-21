@@ -1,13 +1,13 @@
 
-struct StructureParams{T}
-    s::T
+struct StructureParams
+    s::FunctionWrapper{Float64, Tuple{Float64}}
     G::Float64
 end
 
 Base.eltype(::Type{<:StructureParams}) = Float64
 
 
-function evolve(run_params, rho_initial;eps=.1,p_outer=0,mass_min_frac=1e-5)
+function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gridpoints=50)
     sol, L, s, dsdt, t_kh, M_tot = initialize_profile(run_params, rho_initial,p_outer=p_outer,mass_min_frac=mass_min_frac)
     dt = eps*minimum(t_kh)
     
@@ -15,16 +15,20 @@ function evolve(run_params, rho_initial;eps=.1,p_outer=0,mass_min_frac=1e-5)
     r_min = sol(M_min)[1]
     G = ustrip(uconvert(u"kpc*km^2/s^2/Msun", Constants.G))
 
-    M_tot *= 0.9 #bvp has a hard time with the true zero pressure BC
+    M_tot *= 0.8 #bvp has a hard time with the true zero pressure BC
     p_surf = sol(M_tot)[2]
+
+    
 
 
     function bc_l!(resid_a, u_a, p)
-        resid_a[1] = u_a[1] - (r_min)
+        resid_a[1] = u_a[1] - log(r_min)
+        #println(resid_a)
     end
 
     function bc_h!(resid_b, u_b, p)
-        resid_b[1] = u_b[2] - (p_surf)
+        resid_b[1] = u_b[2] - log(p_surf)
+        #println(resid_b)
     end
     function κ(P, s)
         ρ = P^(3/5) *exp(-2s/5)
@@ -33,29 +37,83 @@ function evolve(run_params, rho_initial;eps=.1,p_outer=0,mass_min_frac=1e-5)
             Kinv_lmfp(v2, ρ, run_params, G))
     end
     t=0.
-    while t < run_params.t_end
+    m_face = 10 .^ range(log10(M_min), stop=log10(M_tot), length=gridpoints+1)
+    m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
+    P_core = sol(M_min)[2]
+    P_core_old = P_core
+    dm_cell  = diff(m_face) # Mass of each shell (for the final energy step)
+    s_center = s.(m_center) .+ dsdt.(m_center) .* dt 
+    #loglog(m_face,abs.(L.(m_face)))
+    guess =  [log(r_min),log(P_core)]
+    rspan = (log(M_min), log(M_tot))
+    ode_params = StructureParams(s, G)
+    #prob = ODEProblem(hse_system!, guess, rspan, ode_params)
+    bvp = BVP.TwoPointBVProblem(hse_system!, (bc_l!, bc_h!), guess, rspan, ode_params, bcresid_prototype=(zeros(1),zeros(1)),
+            )
+    println(M_tot)
+    for i in 1:3
+        println(t) 
         t += dt
-        s_new(m) = s(m) + dsdt(m)*dt
-        dsdm(m) = ForwardDiff.derivative(s_new, m)
-
         
+        s_func = x->CubicSpline(s_center, log.(m_center),extrapolation = ExtrapolationType.Constant)(log(x))
        
 
-        #new luminosity from entropy
         
-        ode_params = StructureParams(s_new, G)
-        rspan = ((M_min), (M_tot))
-        guess =  1.00 .*[(sol(M_min)[1]),(sol(M_min)[2])]
-        bvp = BVP.TwoPointBVProblem(hse_system!, (bc_l!, bc_h!), guess, rspan, ode_params, bcresid_prototype=(zeros(2),zeros(2)),
-            )
-        @time sol = BVP.solve(bvp,Shooting(Rosenbrock23(autodiff=false), RobustMultiNewton(;autodiff=AutoFiniteDiff()),jac_alg=BVPJacobianAlgorithm(AutoFiniteDiff())),abstol=1e-3, reltol=1e-3)
-        #L(m) = 32/5 * pi^2 *sol(m)[1]^4 * κ(sol(m)[2],s_new(m)) #*v2
-        dsdt(m) = -ForwardDiff.derivative(L,m)/(sol(m)[2]^(2/5)*exp(2s_new(m)/5))
-        s = s_new
-        #t_kh = abs(s.(sol.t) ./ dsdt.(sol.t))
-        #dt = min(t_kh)*eps
-        println(t)
-    end
+        ode_params = StructureParams(s_func, G)
+        rspan = (log(M_min), log(M_tot))
+        dlogp_dt_core = (log(P_core) - log(P_core_old))
+        guess =  [log(r_min),log(P_core) + dlogp_dt_core]
+      #  bvp = BVP.TwoPointBVProblem(hse_system!, (bc_l!, bc_h!), guess, rspan, ode_params, bcresid_prototype=(zeros(1),zeros(1)),
+       #     )
+        bvp = remake(bvp, u0=guess, p=ode_params)
+        #@time sol = solve(prob, alg=Rosenbrock23(autodiff=false),abstol=1e-4)
+        #@time sol = BVP.solve(bvp,MultipleShooting(4,ode_alg=Rosenbrock23(autodiff=false)),odesolve_kwargs=(;verbose=false),abstol=1e-4,reltol=1e-4)
+    
+        @time sol = BVP.solve(bvp,Shooting(ode_alg=Rosenbrock23(autodiff=false),nlsolve=NewtonRaphson(autodiff=AutoFiniteDiff()),jac_alg=SimpleTrustRegion()),odesolve_kwargs=(;verbose=false),abstol=1e-5,reltol=1e-5)
+        P_center = exp.(sol(log.(m_center))[2,:]) 
+        P_core_old = P_core
+        P_core = P_center[1]
+
+        # Calculate derived center variables
+        ρ_center  = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
+        v2_center = P_center ./ ρ_center
+        κ_center  = κ.(P_center, s_center) # Assuming kappa depends on local state
+        r_face = exp.(sol(log.(m_face))[1,:])
+        dm_between_centers = diff(m_center)
+
+        dv2_dm_face = diff(v2_center) ./ dm_between_centers
+        κ_face = 2*(κ_center[1:end-1] .* κ_center[2:end]) ./(κ_center[1:end-1] .+ κ_center[2:end]) # mean
+      
+        ρ_face  = sqrt.(ρ_center[1:end-1] .* ρ_center[2:end])
+        L_face = zeros(length(m_face))
+        prefactor_face = 16 * pi^2 .* r_face[2:end-1].^4 .* ρ_face .* κ_face
+        L_face[2:end-1] .= -prefactor_face .* dv2_dm_face
+        
+
+        # Calculate the local power-law index `beta` between the first two calculated points
+        # L2 is at M_face[2], L3 is at M_face[3]
+      
+        # Extrapolate to M_min (M_face[1])
+        # We preserve the sign of L_face[2] (inflow or outflow)
+        #L_face[1] = L_face[2] * (m_face[1] / m_face[2])^β
+        L_face[end] = L_face[end-1]
+        dL_dm = diff(L_face) ./ dm_cell
+        # log-log slope between cell 2 and 3
+        dL_dm[1] = dL_dm[2]    
+        dsdt = -dL_dm ./ v2_center
+        s_center .+= dsdt*dt
+        #dt=1e-4
+        #dt = minimum(0.4 .* dm_between_centers .^2 ./ prefactor_face)
+        dt_prev = dt
+        dt = eps * minimum(abs.(s_center ./ dsdt))
+        
+        #loglog(m_center, v2_center)
+        loglog(exp.(sol(log.(m_center))[1,:]),ρ_center)
+        #scatter(m_center, s_center)
+        println("dt", dt)
+       
+   end
+    
 end
 #=
 

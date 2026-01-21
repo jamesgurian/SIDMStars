@@ -1,5 +1,4 @@
 
-using Revise
 include("../src/SIDMStars.jl")
 
 using .SIDMStars
@@ -22,4 +21,4 @@ dm_params = RunParams(
 sol_init = initialize_profile(dm_params, x-> nfw_profile(1, 1e7, x), p_outer=1e-20)
 #semilogx(sol[1].t, sol[2].(sol[1].t))
 #savefig("out.png")
-sol = evolve(dm_params, x -> nfw_profile(1, 1.0e7, x));
+sol = evolve(dm_params, x -> nfw_profile(1, 1.0e7,  x),gridpoints=50,eps=0.001, mass_min_frac=1e-4);
