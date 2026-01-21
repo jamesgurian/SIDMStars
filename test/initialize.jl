@@ -19,7 +19,7 @@ dm_params = RunParams(
     r_max = 100, #kpc
     r_min = 1e-3 #kpc
 )
-sol_init = initialize_profile(dm_params, x-> nfw_profile(1, 1e7, x), p_outer=0.)
+sol_init = initialize_profile(dm_params, x-> nfw_profile(1, 1e7, x), p_outer=1e-20)
 #semilogx(sol[1].t, sol[2].(sol[1].t))
-savefig("out.png")
+#savefig("out.png")
 sol = evolve(dm_params, x -> nfw_profile(1, 1.0e7, x));
