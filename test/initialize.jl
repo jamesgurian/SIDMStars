@@ -14,8 +14,8 @@ dm_params = RunParams(
     σ0 = 1e-8, #cm2/g
     w = 10, # km/s
     n = 0.0,
-    t_end = 10.0,
-    r_max = 100, #kpc
+    t_end = 1.0,
+    r_max = 10, #kpc
     r_min = 1e-3 #kpc
 )
 sol_init = initialize_profile(dm_params, x-> nfw_profile(1, 1e7, x), p_outer=1e-20)

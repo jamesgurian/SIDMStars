@@ -20,6 +20,7 @@ import FunctionWrappers:FunctionWrapper
 using Unitful
 using UnitfulAstro
 using NonlinearSolve
+using StaticArrays
 using PyPlot
 include("bvp.jl")
 include("dm_params.jl")

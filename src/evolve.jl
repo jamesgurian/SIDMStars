@@ -15,9 +15,9 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     r_min = sol(M_min)[1]
     G = ustrip(uconvert(u"kpc*km^2/s^2/Msun", Constants.G))
 
-    M_tot *= 0.8 #bvp has a hard time with the true zero pressure BC
+    M_tot *= 0.7 #bvp has a hard time with the true zero pressure BC
     p_surf = sol(M_tot)[2]
-
+    println("psurf", p_surf)
     
 
 
@@ -51,7 +51,9 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     bvp = BVP.TwoPointBVProblem(hse_system!, (bc_l!, bc_h!), guess, rspan, ode_params, bcresid_prototype=(zeros(1),zeros(1)),
             )
     println(M_tot)
-    for i in 1:3
+    logrmax = log(sol(M_tot)[1])
+    logrmax_old = logrmax
+    while t < run_params.t_end
         println(t) 
         t += dt
         
@@ -62,17 +64,27 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         ode_params = StructureParams(s_func, G)
         rspan = (log(M_min), log(M_tot))
         dlogp_dt_core = (log(P_core) - log(P_core_old))
-        guess =  [log(r_min),log(P_core) + dlogp_dt_core]
+        dlogr_surf = logrmax-logrmax_old
+
+        log_P_guess = log(P_core) + dlogp_dt_core
+        log_R_guess = logrmax# + dlogr_surf
+        @time sol = shoot((log(M_min), log(M_tot)), log_P_guess, log_R_guess, log(r_min), log(p_surf), ode_params)
+        
+        #guess =  [log(r_min),log(P_core) + dlogp_dt_core]
+        #bvp = remake(bvp, u0=guess, p=ode_params)
+        #@time sol = BVP.solve(bvp,Shooting(ode_alg=Rosenbrock23(autodiff=false),nlsolve=RobustMultiNewton(autodiff=AutoFiniteDiff()),jac_alg=BVPJacobianAlgorithm(AutoFiniteDiff())),odesolve_kwargs=(;verbose=false),abstol=1e-5,reltol=1e-5)
+
       #  bvp = BVP.TwoPointBVProblem(hse_system!, (bc_l!, bc_h!), guess, rspan, ode_params, bcresid_prototype=(zeros(1),zeros(1)),
        #     )
-        bvp = remake(bvp, u0=guess, p=ode_params)
         #@time sol = solve(prob, alg=Rosenbrock23(autodiff=false),abstol=1e-4)
         #@time sol = BVP.solve(bvp,MultipleShooting(4,ode_alg=Rosenbrock23(autodiff=false)),odesolve_kwargs=(;verbose=false),abstol=1e-4,reltol=1e-4)
     
-        @time sol = BVP.solve(bvp,Shooting(ode_alg=Rosenbrock23(autodiff=false),nlsolve=NewtonRaphson(autodiff=AutoFiniteDiff()),jac_alg=SimpleTrustRegion()),odesolve_kwargs=(;verbose=false),abstol=1e-5,reltol=1e-5)
+        #@time sol = BVP.solve(bvp,Shooting(ode_alg=Rosenbrock23(autodiff=false),nlsolve=RobustMultiNewton(autodiff=AutoFiniteDiff()),jac_alg=BVPJacobianAlgorithm(AutoFiniteDiff())),odesolve_kwargs=(;verbose=false),abstol=1e-5,reltol=1e-5)
         P_center = exp.(sol(log.(m_center))[2,:]) 
         P_core_old = P_core
         P_core = P_center[1]
+        logrmax_old = logrmax
+        logrmax = sol(log(M_tot))[1]
 
         # Calculate derived center variables
         ρ_center  = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
