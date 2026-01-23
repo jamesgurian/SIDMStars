@@ -17,79 +17,103 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
 
     M_tot *= 0.7 #bvp has a hard time with the true zero pressure BC
     p_surf = sol(M_tot)[2]
-    println("psurf", p_surf)
-    
 
 
-    function bc_l!(resid_a, u_a, p)
-        resid_a[1] = u_a[1] - log(r_min)
-        #println(resid_a)
-    end
 
-    function bc_h!(resid_b, u_b, p)
-        resid_b[1] = u_b[2] - log(p_surf)
-        #println(resid_b)
-    end
     function κ(P, s)
         ρ = P^(3/5) *exp(-2s/5)
         v2 = P/ρ
         return 1/ (Kinv_smfp(v2, run_params) + 
             Kinv_lmfp(v2, ρ, run_params, G))
     end
+    
     t=0.
-    m_face = 10 .^ range(log10(M_min), stop=log10(M_tot), length=gridpoints+1)
+    m_face = vcat(0., (10 .^ range(log10(M_min), stop=log10(M_tot), length=gridpoints+1)))
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
-    P_core = sol(M_min)[2]
-    P_core_old = P_core
-    dm_cell  = diff(m_face) # Mass of each shell (for the final energy step)
-    s_center = s.(m_center) .+ dsdt.(m_center) .* dt 
-    #loglog(m_face,abs.(L.(m_face)))
-    guess =  [log(r_min),log(P_core)]
+    logP_core = log(sol(M_min)[2])
+    logP_core_old = logP_core
+    dm_cell  = diff(m_face)
+    s_center = s.(m_center) 
     rspan = (log(M_min), log(M_tot))
     ode_params = StructureParams(s, G)
-    #prob = ODEProblem(hse_system!, guess, rspan, ode_params)
-    bvp = BVP.TwoPointBVProblem(hse_system!, (bc_l!, bc_h!), guess, rspan, ode_params, bcresid_prototype=(zeros(1),zeros(1)),
-            )
-    println(M_tot)
+    ρ_core = M_min/(4/3 * pi * r_min^3)
     logrmax = log(sol(M_tot)[1])
     logrmax_old = logrmax
-    while t < run_params.t_end
-        println(t) 
-        t += dt
+    #println("rminit", r_min)
+    rspan = (log(M_min), log(M_tot))
+
+    function explicit_dsdt(s_center, ρ_core, log_P_guess, log_R_guess)
+        s_func = x->AkimaInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Constant)(log(x))
+        ode_params = StructureParams(s_func, G)
+        r_min = ((M_min)/ (4/3 * pi * ρ_core))^(1/3)
+        #println("rm", r_min)
+        @time sol = shoot((log(M_min), log(M_tot)), log_P_guess, log_R_guess, log(r_min), log(p_surf), ode_params)
+        P_center = exp.(sol(log.(m_center))[2,:]) 
         
-        s_func = x->CubicSpline(s_center, log.(m_center),extrapolation = ExtrapolationType.Constant)(log(x))
-       
+        # Calculate derived center variables
+        ρ_center  = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
+        v2_center = P_center ./ ρ_center
+        κ_center  = κ.(P_center, s_center) # Assuming kappa depends on local state
+        r_face = exp.(sol(log.(m_face))[1,:])
+        dm_between_centers = diff(m_center)
+
+        dv2_dm_face = diff(v2_center) ./ dm_between_centers
+        κ_face = 2*(κ_center[1:end-1] .* κ_center[2:end]) ./(κ_center[1:end-1] .+ κ_center[2:end]) # mean
+    
+        ρ_face  = sqrt.(ρ_center[1:end-1] .* ρ_center[2:end])
+        L_face = zeros(length(m_face))
+        prefactor_face = 16 * pi^2 .* r_face[2:end-1].^4 .* ρ_face .* κ_face
+        L_face[2:end-1] .= -prefactor_face .* dv2_dm_face
+        dL_dm = diff(L_face) ./ dm_cell
+        #dL_dm[1] = 0
+        #extrapolate for the first grid point
+        #slope =((dL_dm[3] - dL_dm[2])/log(dm_cell[2]))# + (dL_dm[4] - dL_dm[3])/log(dm_cell[3]))
+        #dL_dm[1] = dL_dm[2] - slope * log(dm_cell[1])    
+        dsdt = -dL_dm ./ v2_center
+        slope = (dsdt[3] - dsdt[2])/log(dm_between_centers[2])
+        dsdt[1] = dsdt[2] - slope * log(dm_between_centers[1])
+        loglog(exp.(sol(log.(m_center))[1,:]),ρ_center)
+        return dsdt, sol(log(M_min))[2], sol(log(M_tot))[1], ρ_center[1]
+    end
+
+
+    #
+   # while t < run_params.t_end
+    for i in 1:2
+           println("t:", t) 
+        
+        dlogp_core = (logP_core) - logP_core_old
+        logP_guess = logP_core + dlogp_core
+        dlogrmax = logrmax - logrmax_old
+        logP_core_old = logP_core
+
+        logRguess = logrmax + dlogrmax
+        logrmax_old = logrmax
+        dsdt, logP_core, logrmax, ρ_core = explicit_dsdt(s_center, ρ_core, logP_guess, logRguess)
+        s_center .+= dt .* (dsdt)       #dsdt_predictor, logP_core, logrmax= explicit_dsdt(s_center, logP_guess, logrmax)
+        #s_predictor = s_center .+ dsdt_predictor .* dt
+
+        #dsdt_corrector, _, _ = explicit_dsdt(s_predictor, logP_guess, logrmax)
+        
+       # s_center .+= dt .* 0.5*(dsdt_predictor .+ dsdt_corrector)
+        #semilogx(m_center,0.5*(dsdt_predictor .+ dsdt_corrector))
+        #=s_func = x->AkimaInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Constant)(log(x))
+        
 
         
         ode_params = StructureParams(s_func, G)
-        rspan = (log(M_min), log(M_tot))
-        dlogp_dt_core = (log(P_core) - log(P_core_old))
-        dlogr_surf = logrmax-logrmax_old
-
-        log_P_guess = log(P_core) + dlogp_dt_core
-        log_R_guess = logrmax# + dlogr_surf
-        @time sol = shoot((log(M_min), log(M_tot)), log_P_guess, log_R_guess, log(r_min), log(p_surf), ode_params)
         
-        #guess =  [log(r_min),log(P_core) + dlogp_dt_core]
-        #bvp = remake(bvp, u0=guess, p=ode_params)
-        #@time sol = BVP.solve(bvp,Shooting(ode_alg=Rosenbrock23(autodiff=false),nlsolve=RobustMultiNewton(autodiff=AutoFiniteDiff()),jac_alg=BVPJacobianAlgorithm(AutoFiniteDiff())),odesolve_kwargs=(;verbose=false),abstol=1e-5,reltol=1e-5)
-
-      #  bvp = BVP.TwoPointBVProblem(hse_system!, (bc_l!, bc_h!), guess, rspan, ode_params, bcresid_prototype=(zeros(1),zeros(1)),
-       #     )
-        #@time sol = solve(prob, alg=Rosenbrock23(autodiff=false),abstol=1e-4)
-        #@time sol = BVP.solve(bvp,MultipleShooting(4,ode_alg=Rosenbrock23(autodiff=false)),odesolve_kwargs=(;verbose=false),abstol=1e-4,reltol=1e-4)
-    
-        #@time sol = BVP.solve(bvp,Shooting(ode_alg=Rosenbrock23(autodiff=false),nlsolve=RobustMultiNewton(autodiff=AutoFiniteDiff()),jac_alg=BVPJacobianAlgorithm(AutoFiniteDiff())),odesolve_kwargs=(;verbose=false),abstol=1e-5,reltol=1e-5)
+        @time sol = shoot((log(M_min), log(M_tot)), logP_guess, logrmax, log(r_min), log(p_surf), ode_params)
         P_center = exp.(sol(log.(m_center))[2,:]) 
-        P_core_old = P_core
-        P_core = P_center[1]
+        #P_core_old = P_core
+        logP_core = log(P_center[1])
         logrmax_old = logrmax
         logrmax = sol(log(M_tot))[1]
 
         # Calculate derived center variables
         ρ_center  = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
         v2_center = P_center ./ ρ_center
-        κ_center  = κ.(P_center, s_center) # Assuming kappa depends on local state
+        κ_center  = κ.(P_center, s_center) 
         r_face = exp.(sol(log.(m_face))[1,:])
         dm_between_centers = diff(m_center)
 
@@ -101,27 +125,25 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         prefactor_face = 16 * pi^2 .* r_face[2:end-1].^4 .* ρ_face .* κ_face
         L_face[2:end-1] .= -prefactor_face .* dv2_dm_face
         
-
-        # Calculate the local power-law index `beta` between the first two calculated points
-        # L2 is at M_face[2], L3 is at M_face[3]
-      
-        # Extrapolate to M_min (M_face[1])
-        # We preserve the sign of L_face[2] (inflow or outflow)
-        #L_face[1] = L_face[2] * (m_face[1] / m_face[2])^β
-        L_face[end] = L_face[end-1]
+         L_face[end] = L_face[end-1]
         dL_dm = diff(L_face) ./ dm_cell
-        # log-log slope between cell 2 and 3
-        dL_dm[1] = dL_dm[2]    
-        dsdt = -dL_dm ./ v2_center
-        s_center .+= dsdt*dt
+
+        slope = (dL_dm[3] - dL_dm[2])/log(dm_cell[2])
+        dL_dm[1] = dL_dm[2] - slope * log(dm_cell[1])    
+        dsdt = -dL_dm ./ v2_center 
+        s_center .+= dt .* (dsdt)
+        #dsdt = explicit_dsdt(s_center, dt, log_P_guess, log_R_guess)
         #dt=1e-4
         #dt = minimum(0.4 .* dm_between_centers .^2 ./ prefactor_face)
-        dt_prev = dt
+        #dt_prev = dt=#
+        t += dt
+
         dt = eps * minimum(abs.(s_center ./ dsdt))
         
         #loglog(m_center, v2_center)
-        loglog(exp.(sol(log.(m_center))[1,:]),ρ_center)
-        #scatter(m_center, s_center)
+        #loglog(exp.(sol(log.(m_center))[1,:]),ρ_center)
+        #semilogx(m_center, s_center)
+       # semilogx(m_center, dL_dm)
         println("dt", dt)
        
    end

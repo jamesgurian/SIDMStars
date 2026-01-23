@@ -14,7 +14,7 @@ dm_params = RunParams(
     σ0 = 1e-8, #cm2/g
     w = 10, # km/s
     n = 0.0,
-    t_end = 1.0,
+    t_end = .01,
     r_max = 10, #kpc
     r_min = 1e-3 #kpc
 )
@@ -22,3 +22,4 @@ sol_init = initialize_profile(dm_params, x-> nfw_profile(1, 1e7, x), p_outer=1e-
 #semilogx(sol[1].t, sol[2].(sol[1].t))
 #savefig("out.png")
 sol = evolve(dm_params, x -> nfw_profile(1, 1.0e7,  x),gridpoints=50,eps=0.001, mass_min_frac=1e-4);
+@profview sol = evolve(dm_params, x -> nfw_profile(1, 1.0e7,  x),gridpoints=50,eps=0.001, mass_min_frac=1e-4);

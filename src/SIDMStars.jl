@@ -2,7 +2,7 @@
 """
     SidmStars
 
-A lightweight Julia package layout for SIDM star structure and boundary-value problems.
+A lightweightJulia package for SIDM star structure and boundary-value problems.
 
 
 """

@@ -37,7 +37,7 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
     prob_outer_tmpl = ODEProblem(hse_system!, u0_out_template, (logM_outer, logM_fit), params) 
 
     # Newton Parameters
-    tol = 1e-4
+    tol = 1e-3
     max_iter = 50
     epsilon = 1e-5
 
@@ -52,7 +52,7 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
         prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_x[1]])
         #println("in")
 
-        sol_in  = solve(prob_in, reltol=1e-4, abstol=1e-4,alg_hints=:stiff)
+        sol_in  = solve(prob_in, reltol=1e-3, abstol=1e-3,alg_hints=:stiff)
        # println("uend", sol_in.u[end])
         # Check Inner Failure
         
@@ -60,7 +60,7 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
         # Outer Shot
         
         prob_out = remake(prob_outer_tmpl, u0=[current_x[2], log_p_surf])
-        sol_out  = solve(prob_out, reltol=1e-4, abstol=1e-4,callback=cb_out)
+        sol_out  = solve(prob_out, reltol=1e-4, abstol=1e-3,callback=cb_out)
         #println("uendout", sol_out.u[end])
 
         # Check Outer Failure
@@ -71,8 +71,8 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
         end_out = sol_out[end]
         
         # F = Inner - Outer
-        F_val = [end_in[1] - end_out[1], 
-                 end_in[2] - end_out[2]]
+        F_val = [(end_in[1] - end_out[1])/end_in[1], 
+                 (end_in[2] - end_out[2])/end_out[2]]
         if sol_out.retcode != :Success || sol_in.retcode != :Success
             return (false, F_val, sol_in, sol_out)
         end
@@ -93,12 +93,11 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
 
     while iter < max_iter
         iter += 1
-        err = norm(F)
        # println("\n--- Iteration $iter, Error: $err ---")
 
         # --- CONVERGENCE CHECK ---
-        if err < tol
-         #   println("Converged on iter ", iter)
+        if all(F .<tol)
+            println("Converged on iter ", iter)
             # Stitch solution for full domain return
             final_prob = remake(prob_inner_tmpl, 
                                 u0=[log_r_min, x[1]], 
@@ -139,7 +138,7 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
             # Criteria: 
             # 1. Integration must succeed (:Success)
             # 2. Residual norm should ideally decrease (Damping)
-            if s_test && (norm(F_test) < err || lambda < 0.1)
+            if s_test && (all(F_test .< F) || lambda < 0.1)
            #     println("  Step accepted with lambda = $lambda. New Error: $(norm(F_test))")
                 x = x_test
                 F = F_test
