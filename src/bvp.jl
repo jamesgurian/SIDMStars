@@ -3,7 +3,7 @@ function hse_system!(du,u,p,logm)
         m = exp(logm)
         r = exp(u[1])
         P = exp(u[2])
-        ρ = P^(3/5) *exp(-2p.s(m)/5) 
+        ρ = P^(3/5) *exp(-2p.s(logm)/5) 
         du[1] = m/(4 * pi * r^3 * ρ)
         du[2] = - p.G * m^2 /(4 * pi * r^4 * P)
     end
@@ -17,8 +17,7 @@ function hse_system_rho!(du,u,p,m)
     du[1] = 1/(4 * pi * r^2 * ρ)
     du[2] = - p.G * m /(4 * pi * r^4)
 end
-using LinearAlgebra
-using DifferentialEquations
+
 
 function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, params)
     # 1. Setup Grid
@@ -37,7 +36,7 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
     prob_outer_tmpl = ODEProblem(hse_system!, u0_out_template, (logM_outer, logM_fit), params) 
 
     # Newton Parameters
-    tol = 1e-3
+    tol = 1e-4
     max_iter = 50
     epsilon = 1e-5
 
@@ -94,9 +93,9 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
     while iter < max_iter
         iter += 1
        # println("\n--- Iteration $iter, Error: $err ---")
-
+        err = norm(F)
         # --- CONVERGENCE CHECK ---
-        if all(F .<tol)
+        if err < tol
             println("Converged on iter ", iter)
             # Stitch solution for full domain return
             final_prob = remake(prob_inner_tmpl, 
@@ -138,7 +137,7 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
             # Criteria: 
             # 1. Integration must succeed (:Success)
             # 2. Residual norm should ideally decrease (Damping)
-            if s_test && (all(F_test .< F) || lambda < 0.1)
+            if s_test && (norm(F_test) < err || lambda < 0.1)
            #     println("  Step accepted with lambda = $lambda. New Error: $(norm(F_test))")
                 x = x_test
                 F = F_test

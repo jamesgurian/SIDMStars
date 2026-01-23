@@ -28,7 +28,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     end
     
     t=0.
-    m_face = vcat(0., (10 .^ range(log10(M_min), stop=log10(M_tot), length=gridpoints+1)))
+    m_face = ((10 .^ range(log10(M_min), stop=log10(M_tot), length=gridpoints+1)))
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
     logP_core = log(sol(M_min)[2])
     logP_core_old = logP_core
@@ -43,9 +43,11 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     rspan = (log(M_min), log(M_tot))
 
     function explicit_dsdt(s_center, ρ_core, log_P_guess, log_R_guess)
-        s_func = x->AkimaInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Constant)(log(x))
-        ode_params = StructureParams(s_func, G)
-        r_min = ((M_min)/ (4/3 * pi * ρ_core))^(1/3)
+        s_interp = AkimaInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Constant)
+        #s_func(x) = s_interp(log(x))
+        
+        ode_params = StructureParams(s_interp, G)
+        #r_min = ((M_min)/ (4/3 * pi * ρ_core))^(1/3)
         #println("rm", r_min)
         @time sol = shoot((log(M_min), log(M_tot)), log_P_guess, log_R_guess, log(r_min), log(p_surf), ode_params)
         P_center = exp.(sol(log.(m_center))[2,:]) 
@@ -78,8 +80,8 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
 
 
     #
-   # while t < run_params.t_end
-    for i in 1:2
+   while t < run_params.t_end
+   # for i in 1:10
            println("t:", t) 
         
         dlogp_core = (logP_core) - logP_core_old
