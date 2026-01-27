@@ -30,3 +30,14 @@ macro import_everything(module_expr)
     end
 end
 
+function calc_Φ(G, m_centers, r_centers, drs)
+    m_enclosed = cumsum(m_centers)
+    phivals = -(reverse(cumsum(reverse(G * m_enclosed .* drs ./ r_centers.^2 ))) .+ G*m_enclosed[end]/r_centers[end])
+end
+
+#speed distirbution for 
+#1d squared velocity dispersion v2, at velocity v
+#integrates to unity on [0,Inf]
+function maxwellian(v2, v)
+   sqrt(2/pi) * (v2)^(-3/2) * v^2 * exp(-v^2/(2*v2))
+end 
