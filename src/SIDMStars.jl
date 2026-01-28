@@ -38,6 +38,8 @@ export RunParams
 export initialize_profile
 export Constants
 export nfw_profile
+export dk_profile
+export setup_dk_profile
 export evolve
 # Include implementation files (place implementation in src/bvp.jl)
 

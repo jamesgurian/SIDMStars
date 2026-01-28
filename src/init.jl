@@ -5,7 +5,69 @@ function nfw_profile(r_s, rho_0, r)
     return rho_0 / (x * (1 + x)^2)
 end
 
+function dk_profile(r_s, rho_0, rvir, nu, r)
+    f_trans = (1+1/5*(r/rvir)^4)^(-nu)
+    nfw_profile(r_s, rho_0, r) * f_trans
+end
+using Printf
 
+function get_scale_rho_and_r_from_Mvir_cvir(M_vir, c_vir; 
+                                            z=0.0, 
+                                            delta_vir=200.0, 
+                                            H0=67.74,    # km/s/Mpc
+                                            Om0=0.3089)  # Omega matter
+    
+    # --- Constants & Conversions ---
+    # G in (kpc * km^2) / (s^2 * M_sun)
+    # Derived from G = 6.674e-11 m^3/kg/s^2
+    G_astro = 4.301e-6 
+    
+    # Convert H0 from km/s/Mpc to km/s/kpc (1 Mpc = 1000 kpc)
+    H0_kpc = H0 / 1000.0
+    
+    # --- Cosmology Calculations ---
+    # Critical density at z=0: rho_crit_0 = 3H^2 / 8πG
+    # Resulting units: M_sun / kpc^3
+    rho_crit_0 = (3 * H0_kpc^2) / (8 * π * G_astro)
+    
+    # Physical Matter Density at redshift z: rho_m(z)
+    # rho_m(z) = rho_crit_0 * Om0 * (1+z)^3
+    rho_m_kpc = rho_crit_0 * Om0 * (1 + z)^3
+    
+    # Convert rho_m to M_sun / pc^3 for final output/consistency with source
+    # 1 kpc^3 = 10^9 pc^3
+
+    # --- Step 1: Calculate Virial Radius (R_vir) ---
+    # R_vir = (3 M / 4 π Δ ρ)^(1/3)
+    # Using rho_m_kpc yields R_vir in kpc
+    R_vir = (3 * M_vir / (4 * π * delta_vir * rho_m_kpc))^(1/3)
+
+    # --- Step 2: Calculate Scale Radius (r_s) ---
+    # Units: kpc
+    r_s = R_vir / c_vir
+
+    # --- Step 3: Calculate Characteristic Density (rho_s) ---
+    bracket_term = log(1 + c_vir) - c_vir / (1 + c_vir)
+    
+    # Calculate rho_s in M_sun / kpc^3 first (since r_s is in kpc)
+    rho_s_kpc = M_vir / (4 * π * r_s^3 * bracket_term)
+    
+    # Convert to M_sun / pc^3
+
+    # --- Output ---
+    @printf("M_vir: %0.1e, c_vir: %0.2f, z: %0.2f\n", M_vir, c_vir, z)
+    println("----------------------------------------")
+    println("rho_s: $rho_s_kpc")
+    println("r_s: $r_s")
+    println("R_vir: $R_vir\n")
+
+    return rho_s_kpc, r_s, R_vir
+end
+
+function setup_dk_profile(M_vir, c_vir, nu; kwargs...)
+    rho_s, r_s, R_vir = get_scale_rho_and_r_from_Mvir_cvir(M_vir, c_vir; kwargs...)
+    x -> dk_profile(r_s, rho_s, R_vir, nu, x)
+end
 
 function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_frac=1e-7)
     # Setup a Radial Grid 
@@ -37,6 +99,7 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
     s_func(m) = log(sol(m)[2]^(3/2)/rho_initial(sol(m)[1])^(5/2)) 
     dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
     t_kh = abs.(sol.t[2:end] .* v2_func.(sol.t[2:end]) ./ L_func.(sol.t[2:end]))
+    
     return sol, L_func, s_func, dsdt, t_kh, M_tot
 end
 

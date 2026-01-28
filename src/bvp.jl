@@ -18,7 +18,99 @@ function hse_system_rho!(du,u,p,m)
     du[2] = - p.G * m /(4 * pi * r^4)
 end
 
+function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
+    # 1. Setup Grid
+    logM_inner, logM_outer = mspan[1], mspan[2]
 
+    # 2. Define Problem Templates
+    u0_in_template = [log_r_min, log_P_guess_in] 
+    prob_inner_tmpl = ODEProblem(hse_system!, u0_in_template, (logM_inner, logM_outer), params)
+    
+    # Callback: Terminate if Pressure hits surface target early
+    condition(u, t, integrator) = u[2] < log_p_surf
+    affect!(integrator) = terminate!(integrator)
+    cb = DiscreteCallback(condition, affect!)
+    
+    # settings
+    tol = 1e-10
+    max_iter = 1000
+
+    # 3. Residual Function
+    # Returns negative if Pc is too low, positive if Pc is too high
+    function get_residual(current_logP)
+        prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP])
+        sol_in = solve(prob_in, callback=cb)
+        
+        # Case A: Integration completed (Reached M_outer)
+        if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
+            return (sol_in[end][2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
+            
+        # Case B: Terminated early (Pressure dropped too fast)
+        else
+            # Negative Residual (Ran out of pressure too early)
+           
+            return -1.0 * (logM_outer - sol_in.t[end])
+        end
+    end
+
+    # 4. Phase 1: Find a Bracket
+    println("Searching for bracket...")
+    step_size = 0.001 # Step size for log(P)
+    p_low, p_high = log_P_guess_in, log_P_guess_in
+    res_low, res_high = get_residual(p_low), get_residual(p_high)
+    
+    # Expand until we have one positive and one negative residual
+    expand_iter = 0
+    while sign(res_low) == sign(res_high) && expand_iter < 20
+        if res_low < 0 
+            # Both represent "too low", need to go higher
+            p_high += step_size
+            res_high = get_residual(p_high)
+        else 
+            # Both represent "too high", need to go lower
+            p_low -= step_size
+            res_low = get_residual(p_low)
+        end
+        expand_iter += 1
+    end
+    
+    if sign(res_low) == sign(res_high)
+        error("Could not bracket the root. Try a better initial guess.")
+    end
+    
+    # Ensure p_low corresponds to negative residual for standard logic
+    if res_low > 0
+        p_low, p_high = p_high, p_low
+        res_low, res_high = res_high, res_low
+    end
+    
+    println("Bracket found: [$p_low, $p_high]")
+
+    # 5. Phase 2: Bisection Method
+    println("Starting Bisection...")
+    iter = 0
+    p_mid = 0.0
+    
+    while (p_high - p_low) > tol && iter < max_iter
+        iter += 1
+        p_mid = (p_low + p_high) / 2
+        res_mid = get_residual(p_mid)
+        
+        if res_mid == 0
+            break # Exact match found
+        elseif res_mid < 0
+            p_low = p_mid # Root is in upper half
+        else
+            p_high = p_mid # Root is in lower half
+        end
+    end
+    
+    println("Converged in $iter iterations to Log(Pc) = $p_mid")
+
+    # 6. Return Final Solution
+    final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid])
+    return solve(final_prob)
+end
 function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, params)
     # 1. Setup Grid
     logM_inner, logM_outer = mspan[1], mspan[2]
@@ -27,7 +119,7 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
     # State Vector: x = [log_P_inner, log_R_outer]
     x = [log_P_guess_in, log_R_guess_out]
  #   println("Initial Guess: $x")
-  #  println(logM_fit)
+    println("Mfit", logM_fit)
     # 2. Define Problem Templates
     u0_in_template = [log_r_min, x[1]] 
     prob_inner_tmpl = ODEProblem(hse_system!, u0_in_template, (logM_inner, logM_fit), params)
@@ -82,10 +174,14 @@ function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, pa
     
     success, F, sol_in, sol_out = try_shot(x)
     while !success
+        #println("uh oh", sol_out.u)
+        #println("P_gu", log_P_guess_in)
         if sol_out.u[end][2] > log_P_guess_in
             x[2] *= 1.001
             success, F, sol_in, sol_out = try_shot(x)
+        
         end
+
     end
     iter = 0
     println("Starting Two-Point Shooting ...")

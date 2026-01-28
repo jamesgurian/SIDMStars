@@ -30,9 +30,9 @@ macro import_everything(module_expr)
     end
 end
 
-function calc_Φ(G, m_centers, r_centers, drs)
-    m_enclosed = cumsum(m_centers)
-    phivals = -(reverse(cumsum(reverse(G * m_enclosed .* drs ./ r_centers.^2 ))) .+ G*m_enclosed[end]/r_centers[end])
+function calc_Φ(G, m_centers, m_tot, rmax, r_centers, drs)
+    
+    phivals = -(reverse(cumsum(reverse(G * m_centers .* drs ./ r_centers.^2 ))) .+ G*m_tot/rmax)
 end
 
 #speed distirbution for 
