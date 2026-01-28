@@ -1,4 +1,4 @@
-f_k5(v_over_w,n) = 1/6 * sqrt(2 * v_over_w)^n * gamma(n/2 + 4)
+f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
 
 function Kinv_smfp(v2, dm_params) 
     b = 25 * sqrt(pi)/32 #smfp coefficient
@@ -17,18 +17,18 @@ function K_eff(v2,ρ, dm_params)
 end
 
 #tau of surface velocity v (v should be scalar or row vector)
-function calc_τ(run_params, dr, Φ_vals, ρ_center,v)
+function calc_τ(run_params, dr, Φ_vals, ρ_center,v2_center, v)
     v_vals = sqrt.(v.^2 .- 2 * (Φ_vals .- Φ_vals[end]))
-    integrand = ρ_center .* run_params.σ0 .* (v_vals ./ run_params.w).^(run_params.n) .* dr
+
+    integrand = ρ_center .* run_params.σ0 .* (sqrt.(v_vals.^2 .+ v2_center.^2) ./ run_params.w).^(run_params.n) .* dr
         
     # Integrate along columns
-    #this allocates a bunch, so we should preallocate if this is ever expensive
     τ_vals = reverse(cumsum(reverse(integrand, dims=1), dims=1), dims=1)    
     return v_vals, τ_vals
 end
 
 function calc_evaporation(run_params, Φ, dm, r, dr, ρ, v2s, v_vals )
-    v_shifted, τ_vals = calc_τ(run_params, dr, Φ, ρ, v_vals')
+    v_shifted, τ_vals = calc_τ(run_params, dr, Φ, ρ, v2s, v_vals')
     dvs = diff(v_shifted, dims=2)
     v_centered = 0.5(v_shifted[:,1:end-1] .+ v_shifted[:,2:end])
     τ_centered = 0.5(τ_vals[:,2:end] .+ τ_vals[:,1:end-1])
@@ -41,5 +41,6 @@ function calc_evaporation(run_params, Φ, dm, r, dr, ρ, v2s, v_vals )
     #s = log(v2^(3/2)) - log(rho)
     #dsdt = 3/2 d log(v^2)/dt = 3/2 dv^2/dt /v2
     sdot = 3/2 * v2dot_vintegrated ./ v2s 
+    #loglog(r, -v2dot_vintegrated./v2s, "--")
     return sdot
 end

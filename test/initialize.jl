@@ -4,7 +4,6 @@ include("../src/SIDMStars.jl")
 using .SIDMStars
 using PyPlot
 
-using ProfileView
     
 
 
@@ -15,7 +14,7 @@ dm_params = RunParams(
     w = 10, # km/s
     n = -4.,
     t_end = 1,
-    r_max = 3, #kpc
+    r_max = 5, #kpc
     r_min = 1e-3, #kpc
     snaptimes = range(.01, stop = 1, length=30)
 )
@@ -24,5 +23,5 @@ profile = setup_dk_profile(1e6, 7, 1, z=10)
 sol_init = initialize_profile(dm_params,profile, p_outer=0)
 #semilogx(sol[1].t, sol[2].(sol[1].t))
 #savefig("out.png")
-sol = evolve(dm_params,profile,gridpoints=100,eps=0.001, mass_min_frac=1e-4);
+sol = evolve(dm_params,profile,gridpoints=200,eps=0.001, mass_min_frac=1e-4);
 #@profview sol = evolve(dm_params, x -> nfw_profile(1, 1.0e7,  x),gridpoints=50,eps=0.001, mass_min_frac=1e-4);

@@ -32,7 +32,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     cb = DiscreteCallback(condition, affect!)
     
     # settings
-    tol = 1e-10
+    tol = 1e-12
     max_iter = 1000
 
     # 3. Residual Function
@@ -105,7 +105,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
         end
     end
     
-    println("Converged in $iter iterations to Log(Pc) = $p_mid")
+    println("Terminated after $iter iterations to Log(Pc) = $p_mid")
 
     # 6. Return Final Solution
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid])

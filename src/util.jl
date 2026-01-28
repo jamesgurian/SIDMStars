@@ -39,5 +39,5 @@ end
 #1d squared velocity dispersion v2, at velocity v
 #integrates to unity on [0,Inf]
 function maxwellian(v2, v)
-   sqrt(2/pi) * (v2)^(-3/2) * v^2 * exp(-v^2/(2*v2))
+   4 * pi * (2*pi*v2)^(-3/2) * v^2 * exp(-v^2/(2*v2))
 end 

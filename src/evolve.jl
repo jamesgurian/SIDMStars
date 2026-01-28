@@ -29,11 +29,15 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     end
     
     t=0.
-    m_face = ((10 .^ range(log10(M_min), stop=log10(0.9M_tot), length=floor(Int, gridpoints/2)+1)))
-    m_face = vcat(m_face[1:end-1], range(m_face[end], M_tot, length = floor(Int,gridpoints/2)))
+    m_face_bottom  = ((10 .^ range(log10(M_min), stop=log10(0.5M_tot), length=floor(Int, gridpoints/2)+1)))
+    ϵ = 1e-2*M_tot                  # smallest gap to m_max
+    Δ = 0.5M_tot
+
+    m_face_top = M_tot .- exp.(range(log(Δ), log(ϵ), length=floor(Int,gridpoints/2)))
+    m_face = vcat(m_face_bottom[1:end-1], m_face_top, M_tot)
     #since we're using a log grid, the centers should probably be geometric mean
     #but i doubt it matters in practice
-    m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
+    m_center = sqrt.(m_face[1:end-1] .* m_face[2:end])
     logP_core = log(sol(M_min)[2])
     logP_core_old = logP_core
     dm_cell  = diff(m_face)
@@ -87,23 +91,25 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         v2_esc_core = -2 * Φ[1]
         #rangeps*minimum(t_kh)e from surface escape velocity to twice the core velocity
         #grid is an odd size so we'll get errors if we broadcast something we shouldn't 
-        vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(v2_esc_core)),length=2*gridpoints+3))
+        vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(v2_esc_core)),length=2gridpoints+3))
+        #
+        #vrange = exp.(range(log(.001), stop=log(sqrt.(v2_esc_core)),length=2*gridpoints+3))
         sdot_evap = calc_evaporation(run_params, Φ, diff(m_face), r_center, diff(r_face), ρ_center, v2_center, vrange)
         dsdt = dsdt_conduct #.+ sdot_evap
         dsdt_tot = dsdt_conduct .+ sdot_evap
-        loglog(r_center, ρ_center)
-        #loglog(r_center, abs.( dsdt_conduct ))
-                #loglog(r_center, abs.(sdot_evap))
+      #  loglog(r_center, ρ_center)
+        loglog(r_center, min.(1e100, abs.(s_center) ./abs.( dsdt_conduct ) ))
+        loglog(r_center,  min.(1e100, abs.(s_center) ./ abs.(sdot_evap)))
 
        # loglog(r_center, abs.(s_center ./ sdot_evap), "--")
         ρ_core =  ρ_center[1] * (r_min[1]/r_center[1])^slope #extrapolate to r_min
-        return dsdt, sol(log(M_min))[2], sol(log(M_tot))[1], ρ_core, sol
+        return dsdt_tot, sol(log(M_min))[2], sol(log(M_tot))[1], ρ_core, sol
     end
 
 
     snap_idx=1
   #while t < run_params.t_end
-    for i in 1:5
+    for i in 1:10
            println("t:", t) 
         
         dlogp_core = (logP_core) - logP_core_old

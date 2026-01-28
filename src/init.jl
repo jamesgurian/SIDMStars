@@ -22,7 +22,7 @@ function get_scale_rho_and_r_from_Mvir_cvir(M_vir, c_vir;
     # Derived from G = 6.674e-11 m^3/kg/s^2
     G_astro = 4.301e-6 
     
-    # Convert H0 from km/s/Mpc to km/s/kpc (1 Mpc = 1000 kpc)
+    # Convert H0 from km/s/Mpc to km/s/kpc 
     H0_kpc = H0 / 1000.0
     
     # --- Cosmology Calculations ---
