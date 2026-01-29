@@ -15,7 +15,6 @@ end
 function K_eff(v2,ρ, dm_params)
     1/(Kinv_smfp(v2, dm_params) + Kinv_lmfp(v2, ρ, dm_params, G))
 end
-
 #tau of surface velocity v (v should be scalar or row vector)
 function calc_τ(run_params, dr, Φ_vals, ρ_center,v2_center, v)
     v_vals = sqrt.(v.^2 .- 2 * (Φ_vals .- Φ_vals[end]))

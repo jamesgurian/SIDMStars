@@ -3,7 +3,7 @@ function hse_system!(du,u,p,logm)
         m = exp(logm)
         r = exp(u[1])
         P = exp(u[2])
-        ρ = P^(3/5) *exp(-2p.s(logm)/5) 
+        ρ = P^(3/5) *exp(-2p.s(u[1])/5) 
         du[1] = m/(4 * pi * r^3 * ρ)
         du[2] = - p.G * m^2 /(4 * pi * r^4 * P)
     end
@@ -32,7 +32,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     cb = DiscreteCallback(condition, affect!)
     
     # settings
-    tol = 1e-12
+    tol = 1e-15
     max_iter = 1000
 
     # 3. Residual Function
@@ -40,7 +40,6 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     function get_residual(current_logP)
         prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP])
         sol_in = solve(prob_in, callback=cb)
-        
         # Case A: Integration completed (Reached M_outer)
         if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
             return (sol_in[end][2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
@@ -55,7 +54,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
 
     # 4. Phase 1: Find a Bracket
     println("Searching for bracket...")
-    step_size = 0.001 # Step size for log(P)
+    step_size = 0.01 # Step size for log(P)
     p_low, p_high = log_P_guess_in, log_P_guess_in
     res_low, res_high = get_residual(p_low), get_residual(p_high)
     
@@ -64,11 +63,12 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     while sign(res_low) == sign(res_high) && expand_iter < 20
         if res_low < 0 
             # Both represent "too low", need to go higher
-            p_high += step_size
+            p_high -= step_size
             res_high = get_residual(p_high)
+            println(res_high)
         else 
             # Both represent "too high", need to go lower
-            p_low -= step_size
+            p_low += step_size
             res_low = get_residual(p_low)
         end
         expand_iter += 1
@@ -89,9 +89,9 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     # 5. Phase 2: Bisection Method
     println("Starting Bisection...")
     iter = 0
-    p_mid = 0.0
-    
-    while (p_high - p_low) > tol && iter < max_iter
+    p_mid = (p_high + p_low)/2
+    #println("0.5(p_high - p_low)/(p_high+p_low) ", 0.5(p_high - p_low)/(p_high+p_low) )
+    while abs(0.5(p_high - p_low)/(p_high+p_low)) > tol && iter < max_iter
         iter += 1
         p_mid = (p_low + p_high) / 2
         res_mid = get_residual(p_mid)
@@ -109,7 +109,8 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
 
     # 6. Return Final Solution
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid])
-    return solve(final_prob)
+    sol = solve(final_prob,callback=cb)
+    return sol
 end
 function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, params)
     # 1. Setup Grid

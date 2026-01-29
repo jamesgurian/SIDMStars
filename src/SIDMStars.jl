@@ -10,7 +10,6 @@ A lightweightJulia package for SIDM star structure and boundary-value problems.
 module SIDMStars
 using LinearAlgebra
 using DifferentialEquations
-import BoundaryValueDiffEq as BVP
 using ForwardDiff
 using DataInterpolations
 using SpecialFunctions
@@ -19,7 +18,6 @@ using FunctionWrappers
 import FunctionWrappers:FunctionWrapper    
 using Unitful
 using UnitfulAstro
-using NonlinearSolve
 using StaticArrays
 using PyPlot
 include("bvp.jl")

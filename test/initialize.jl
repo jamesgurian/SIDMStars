@@ -14,7 +14,7 @@ dm_params = RunParams(
     w = 10, # km/s
     n = -4.,
     t_end = 1,
-    r_max = 5, #kpc
+    r_max = 10, #kpc
     r_min = 1e-3, #kpc
     snaptimes = range(.01, stop = 1, length=30)
 )
