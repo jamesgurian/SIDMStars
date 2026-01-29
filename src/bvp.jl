@@ -3,9 +3,11 @@ function hse_system!(du,u,p,logm)
         m = exp(logm)
         r = exp(u[1])
         P = exp(u[2])
+        #u[3] = Phi
         ρ = P^(3/5) *exp(-2p.s(u[1])/5) 
         du[1] = m/(4 * pi * r^3 * ρ)
         du[2] = - p.G * m^2 /(4 * pi * r^4 * P)
+        du[3] = p.G * m^2/(4 * pi * r^4 * ρ)
     end
 
 function hse_system_rho!(du,u,p,m)
@@ -23,7 +25,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     logM_inner, logM_outer = mspan[1], mspan[2]
 
     # 2. Define Problem Templates
-    u0_in_template = [log_r_min, log_P_guess_in] 
+    u0_in_template = [log_r_min, log_P_guess_in, 0.] 
     prob_inner_tmpl = ODEProblem(hse_system!, u0_in_template, (logM_inner, logM_outer), params)
     
     # Callback: Terminate if Pressure hits surface target early
@@ -38,7 +40,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     # 3. Residual Function
     # Returns negative if Pc is too low, positive if Pc is too high
     function get_residual(current_logP)
-        prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP])
+        prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP, 0.])
         sol_in = solve(prob_in, callback=cb)
         # Case A: Integration completed (Reached M_outer)
         if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
@@ -108,7 +110,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     println("Terminated after $iter iterations to Log(Pc) = $p_mid")
 
     # 6. Return Final Solution
-    final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid])
+    final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])
     sol = solve(final_prob,callback=cb)
     return sol
 end

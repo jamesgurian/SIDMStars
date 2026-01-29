@@ -15,7 +15,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     r_min = sol(M_min)[1]
     G = ustrip(uconvert(u"kpc*km^2/s^2/Msun", Constants.G))
 
-    M_tot *= 0.9999 #bvp has a hard time with the true zero pressure BC
+    M_tot -= 1e-6*M_tot #bvp has a hard time with the true zero pressure BC, because we log transform P
     p_surf = sol(M_tot)[2]
     println("surf", p_surf)
     
@@ -29,12 +29,13 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     end
     
     t=0.
-    m_face_bottom  = ((10 .^ range(log10(M_min), stop=log10(0.5M_tot), length=floor(Int, gridpoints/2)+1)))
+    m_face = 10 .^ range(log10(M_min), stop = log10(M_tot), length=gridpoints)
+    #_bottom  = ((10 .^ range(log10(M_min), stop=log10(0.5M_tot), length=floor(Int, gridpoints/2)+1)))
     ϵ = 1e-2*M_tot                  # smallest gap to m_max
     Δ = 0.5M_tot
 
-    m_face_top = M_tot .- exp.(range(log(Δ), log(ϵ), length=floor(Int,gridpoints/2)))
-    m_face = vcat(m_face_bottom[1:end-1], m_face_top, M_tot)
+   # m_face_top = M_tot .- exp.(range(log(Δ), log(ϵ), length=floor(Int,gridpoints/2)))
+    #m_face = vcat(m_face_bottom[1:end-1], m_face_top, M_tot)
     #since we're using a log grid, the centers should probably be geometric mean
     #but i doubt it matters in practice
     m_center = sqrt.(m_face[1:end-1] .* m_face[2:end])
@@ -44,13 +45,11 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     dm_cell  = diff(m_face)
     s_center = s.(m_center) 
     rspan = (log(M_min), log(M_tot))
-    #loglog(m_center, sol(m_center)[1,:],lw=3)
     ode_params = StructureParams(s, G)
     ρ_core = M_min/(4/3 * pi * r_min^3)
     logrmax = log(sol(M_tot)[1])
     println("rtot, ", sol(M_tot)[1])
     logrmax_old = logrmax
-    #println("rminit", r_min)
     rspan = (log(M_min), log(M_tot))
     snap_t = zeros(length(run_params.snaptimes))
     snap_p = zeros(length(run_params.snaptimes), length(m_center))
@@ -61,9 +60,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     function explicit_dsdt(s_center, r_center, ρ_core, log_P_guess, log_R_guess)
         s_interp = AkimaInterpolation(s_center, log.(r_center),extrapolation = ExtrapolationType.Linear)
         ode_params = StructureParams(s_interp, G)
-        #scatter(r_center, s_interp.(log.(r_center)))
-       # scatter(exp(logrmax), s_interp(logrmax))
-
+      
         @time sol = shoot_1p((log(M_min), log(M_tot)), log_P_guess, log(r_min), log(p_surf), ode_params)
         P_center = exp.(sol(log.(m_center))[2,:]) 
 
@@ -74,7 +71,6 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         r_face = exp.(sol(log.(m_face))[1,:])
         println("rtot", r_face[end])
         r_center = exp.(sol(log.(m_center))[1,:])
-       # scatter(r_center, s_interp.(log.(r_center)))
 
         slope = log(r_center[2]/r_center[1])/log(m_center[2]/m_center[1])
         r_min = r_center[1] * (M_min/m_center[1])^slope
@@ -92,19 +88,20 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         slope = (dsdt_conduct[3] - dsdt_conduct[2])/log(dm_between_centers[2])
         dsdt_conduct[1] = dsdt_conduct[2] - slope * log(dm_between_centers[1])
         slope = log(ρ_center[2]/ρ_center[1])/log(r_center[2]/r_center[1])
-        Φ = calc_Φ(G, m_center, M_tot, exp(sol(log(M_tot))[1]),r_center, diff(r_face))
+        #Φ = calc_Φ(G, m_center, M_tot, exp(sol(log(M_tot))[1]),r_center, diff(r_face))
         v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglectting the mass exterior to the integration region
-        v2_esc_core = -2 * Φ[1]
+        v2_esc_core =  2 * sol[end][3]
+        println("v2_surf", v2_esc_surface )
         #rangeps*minimum(t_kh)e from surface escape velocity to twice the core velocity
         #grid is an odd size so we'll get errors if we broadcast something we shouldn't 
         vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(v2_esc_core)),length=2gridpoints+3))
         #
         #vrange = exp.(range(log(.001), stop=log(sqrt.(v2_esc_core)),length=2*gridpoints+3))
-        sdot_evap = calc_evaporation(run_params, Φ, diff(m_face), r_center, diff(r_face), ρ_center, v2_center, vrange)
+        calc_τ(sol, s_interp,m_face, m_center, run_params, sqrt(v2_esc_surface))
+        #sdot_evap = calc_evaporation(run_params, Φ, diff(m_face), r_center, diff(r_face), ρ_center, v2_center, vrange)
         dsdt = dsdt_conduct #.+ sdot_evap
         dsdt_tot = dsdt_conduct .+ sdot_evap
 
-        loglog(r_center, ρ_center)
         #semilogx(r_center, s_center)
         #scatter(exp(sol(log(M_tot))[1]),exp(sol(log(M_tot))[2]))
         #loglog(r_center, min.(1e100, abs.(s_center) ./abs.( dsdt_conduct ) ))
