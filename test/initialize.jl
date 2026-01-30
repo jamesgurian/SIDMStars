@@ -10,7 +10,7 @@ using PyPlot
 # 3. Setup Params
 dm_params = RunParams(
     C = 1.0,
-    σ0 = 5e-5, #kpc^2/M_sun
+    σ0 = 5e-6, #kpc^2/M_sun
     w = 10, # km/s
     n = -4.,
     t_end = 1,

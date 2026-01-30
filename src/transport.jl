@@ -16,7 +16,8 @@ function K_eff(v2,ρ, dm_params)
     1/(Kinv_smfp(v2, dm_params) + Kinv_lmfp(v2, ρ, dm_params, G))
 end
 #tau of surface velocity v (v should be scalar or row vector)
-function calc_τ(run_params, dr, Φ_vals, ρ_center,v2_center, v)
+
+function calc_τ(run_params, dr::Vector{Float64}, Φ_vals, ρ_center,v2_center, v)
     v_vals = sqrt.(v.^2 .- 2 * (Φ_vals .- Φ_vals[end]))
 
     integrand = ρ_center .* run_params.σ0 .* (sqrt.(v_vals.^2 .+ v2_center.^2) ./ run_params.w).^(run_params.n) .* dr
@@ -27,7 +28,7 @@ function calc_τ(run_params, dr, Φ_vals, ρ_center,v2_center, v)
 end
 
 
-function calc_τ(sol, s, m_face, m_center, run_params, v_surf)
+function calc_τ(run_params,sol, s, m_face, m_center,  v_surf)
     #integrate from surface
     logm_face_grid = reverse(log.(m_face))
     logm_center_grid = reverse(log.(m_center))
@@ -69,32 +70,65 @@ function calc_τ(sol, s, m_face, m_center, run_params, v_surf)
 
     #Accumulate Integral over Grid
     n_points = length(logm_face_grid)
-    v_vals = zeros(n_points)
-    τ_vals = zeros(length(logm_center_grid)+1)
+    v_vals = zeros(length(logm_center_grid))
+    τ_vals = zeros(length(logm_face_grid))
     
-    v_vals[1] = v_surf + 2* (Phi_surf - sol(logm_center_grid[1])[3])
+    v_vals[1] = sqrt(v_surf^2 + 2 * (Phi_surf - sol(logm_center_grid[1])[3]))
     τ_vals[1] = 0.0 
+    
     Phi = Phi_surf
+    for i in 1:(length(v_vals)-1)
+         # Calculate velocity at the specific grid point for output
+         dPhi = sol(logm_center_grid[i])[3] - Phi
+         Phi += dPhi
+         v2_next = v_vals[i]^2 - 2 * dPhi
+         v_vals[i+1] = sqrt(v2_next)
+    end
     for i in 1:n_points-1
         # Integrate from current logm to next smaller logm (moving inwards)
-        dtau_signed, err = quadgk(integrand, logm_face_grid[i], logm_face_grid[i+1],rtol=1e-3 )
+        dtau_signed, _ = quadgk(integrand, logm_face_grid[i], logm_face_grid[i+1],rtol=1e-3 )
         
         # Accumulate
         # dr_dlogm is negative (radius shrinks as mass shrinks), so dtau_signed is negative.
         # Optical depth is a positive accumulation of path, so we subtract to flip the sign.
         τ_vals[i+1] = τ_vals[i] - dtau_signed
         
-        # Calculate velocity at the specific grid point for output
-        dPhi = sol(logm_center_grid[i])[3] - Phi
-        Phi += dPhi
-        v2_next = v_vals[i]^2 - 2 * dPhi
-        v_vals[i+1] = v2_next > 0 ? sqrt(v2_next) : 0.0
+       
     end
-    τ_vals = τ_vals[2:end]
+    
     
     return reverse(v_vals), reverse(τ_vals)
 end
-function calc_evaporation(run_params, Φ, dm, r, dr, ρ, v2s, v_vals )
+
+function calc_evaporation(run_params, sol, s, m_face, m_center, dm_face, ρ,r_center, v2s, v_vals)
+    #each column is one geodesic
+    #with its own initial (surface) velocity
+    τ_array = zeros(length(m_face),length(v_vals))
+    v_array = zeros(length(m_center), length(v_vals ))
+    for (i, v_val) in enumerate(v_vals)
+        vs, τs = calc_τ(run_params, sol, s, m_face, m_center, v_val)
+        
+        v_array[:, i] .= vs
+        τ_array[:, i] .= τs
+    end
+    τ_centered_v = sqrt.(τ_array[:, 1:end-1] .* τ_array[:,2:end]) #we need to reduce the dimensionality along the v dimension, too
+
+    dτ = diff(τ_centered_v, dims=1) #now the accumulation optical depth along each step on the geodesics
+    τ_centered =sqrt.(τ_centered_v[2:end, :] .* τ_centered_v[1:end-1,:]) #and we need the value of \tau at the spatial grid centers
+    v_centered = sqrt.(v_array[:, 2:end] .* v_array[:, 1:end-1]) #we need to integrate dv. 
+    dvs = diff(v_array, dims=2)
+    # \dot \u = \int dv 4 pi r^2 \rho/m v f(v) (0.5 v^2) e^-(\tau) d\tau
+    #v2 = 2/3 u
+    loglog(r_center, τ_centered[:,1])
+
+    loglog(r_center, τ_centered[:,end])
+    #TODO: there should be some geometric factor to only have outgoing v? Is it just 0.5 in the radial orbit approximation? 
+    v2dot_vintegrated = -sum((@. 4. / 3.  * pi * r_center^2 * ρ/dm_face * v_centered^3 * maxwellian(v2s, v_centered) * dvs* exp(-τ_centered) * dτ),dims=2)
+    #s = log(v2^(3/2)) - log(rho)
+    #dsdt = 3/2 d log(v^2)/dt = 3/2 dv^2/dt /v2
+    sdot = 3/2 * v2dot_vintegrated ./ v2s 
+end
+#=function calc_evaporation(run_params, Φ, dm, r, dr, ρ, v2s, v_vals )
     v_shifted, τ_vals = calc_τ(run_params, dr, Φ, ρ, v2s, v_vals')
     dvs = diff(v_shifted, dims=2)
     v_centered = 0.5(v_shifted[:,1:end-1] .+ v_shifted[:,2:end])
@@ -111,3 +145,4 @@ function calc_evaporation(run_params, Φ, dm, r, dr, ρ, v2s, v_vals )
     #loglog(r, -v2dot_vintegrated./v2s, "--")
     return sdot
 end
+=#

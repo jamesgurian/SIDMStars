@@ -29,13 +29,13 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     end
     
     t=0.
-    m_face = 10 .^ range(log10(M_min), stop = log10(M_tot), length=gridpoints)
-    #_bottom  = ((10 .^ range(log10(M_min), stop=log10(0.5M_tot), length=floor(Int, gridpoints/2)+1)))
-    ϵ = 1e-2*M_tot                  # smallest gap to m_max
+    #m_face = 10 .^ range(log10(M_min), stop = log10(M_tot), length=gridpoints)
+    m_face_bottom  = ((10 .^ range(log10(M_min), stop=log10(0.5M_tot), length=floor(Int, gridpoints/2)+1)))
+    ϵ = 1e-4*M_tot                  # smallest gap to m_max
     Δ = 0.5M_tot
 
-   # m_face_top = M_tot .- exp.(range(log(Δ), log(ϵ), length=floor(Int,gridpoints/2)))
-    #m_face = vcat(m_face_bottom[1:end-1], m_face_top, M_tot)
+    m_face_top = M_tot .- exp.(range(log(Δ), log(ϵ), length=floor(Int,gridpoints/2)))
+    m_face = vcat(m_face_bottom[1:end-1], m_face_top, M_tot)
     #since we're using a log grid, the centers should probably be geometric mean
     #but i doubt it matters in practice
     m_center = sqrt.(m_face[1:end-1] .* m_face[2:end])
@@ -96,16 +96,32 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         #grid is an odd size so we'll get errors if we broadcast something we shouldn't 
         vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(v2_esc_core)),length=2gridpoints+3))
         #
+        Φ = calc_Φ(G, m_center, M_tot, exp(sol(log(M_tot))[1]),r_center, diff(r_face))
+        v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglectting the mass exterior to the integration region
+        v2_esc_core = -2 * Φ[1]
+        #rangeps*minimum(t_kh)e from surface escape velocity to twice the core velocity
+        #grid is an odd size so we'll get errors if we broadcast something we shouldn't 
+        
         #vrange = exp.(range(log(.001), stop=log(sqrt.(v2_esc_core)),length=2*gridpoints+3))
-        calc_τ(sol, s_interp,m_face, m_center, run_params, sqrt(v2_esc_surface))
+        #calc_τ(run_params,sol, s_interp,m_face, m_center, sqrt(v2_esc_surface))
+        dsdt_evap = calc_evaporation(run_params, sol, s, m_face, m_center, dm_cell, ρ_center,r_center, v2_center, vrange)
+        vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(v2_esc_core)),length=2*gridpoints+3))
+        #hlines(vrange[1], 1e-3, 3)
+       # hlines(vrange[end], 1e-3, 3)
+        v, tau = calc_τ(run_params,diff(r_face),Φ,ρ_center, v2_center, vrange')
+        
+        loglog(r_center, tau[:,1])
+        loglog(r_center, tau[:,end])
+
+
         #sdot_evap = calc_evaporation(run_params, Φ, diff(m_face), r_center, diff(r_face), ρ_center, v2_center, vrange)
-        dsdt = dsdt_conduct #.+ sdot_evap
-        dsdt_tot = dsdt_conduct .+ sdot_evap
+        #dsdt = dsdt_conduct #.+ sdot_evap
+        dsdt_tot = dsdt_conduct .+ dsdt_evap
 
         #semilogx(r_center, s_center)
         #scatter(exp(sol(log(M_tot))[1]),exp(sol(log(M_tot))[2]))
-        #loglog(r_center, min.(1e100, abs.(s_center) ./abs.( dsdt_conduct ) ))
-        #loglog(r_center,  min.(1e100, abs.(s_center) ./ abs.(sdot_evap)))
+       # loglog(r_center,  abs.( dsdt_conduct ) )
+       # loglog(r_center, abs.(dsdt_evap))
         #figure()
         #loglog(m_center, r_center)
        # loglog(r_center, abs.(s_center ./ sdot_evap), "--")
