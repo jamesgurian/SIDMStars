@@ -46,7 +46,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
         if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
             return (sol_in[end][2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
             
-        # Case B: Terminated early (Pressure dropped too fast)
+        # Case B[v_val, 0., 0.]: Terminated early (Pressure dropped too fast)
         else
             # Negative Residual (Ran out of pressure too early)
            
