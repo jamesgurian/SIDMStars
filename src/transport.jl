@@ -20,7 +20,7 @@ end
 function calc_τ(run_params, dr::Vector{Float64}, Φ_vals, ρ_center,v2_center, v)
     v_vals = sqrt.(v.^2 .- 2 * (Φ_vals .- Φ_vals[end]))
 
-    integrand = ρ_center .* run_params.σ0 .* (sqrt.(v_vals.^2 .+ v2_center.^2) ./ run_params.w).^(run_params.n) .* dr
+    integrand = ρ_center .* run_params.σ0 .* (sqrt.(v_vals.^2 .+ v2_center) ./ run_params.w).^(run_params.n) .* dr
         
     # Integrate along columns
     τ_vals = reverse(cumsum(reverse(integrand, dims=1), dims=1), dims=1)    
@@ -44,13 +44,6 @@ function calc_τ(run_params,sol, s, m_face, m_center,  v_surf)
         r = exp(logr)
         P = exp(logP)
         
-        # --- Retrieve Derivatives (Geometry) ---
-        # sol(logm, Val{1}) gives [d(logr)/d(logm), d(logP)/d(logm), dPhi/d(logm)]
-        du_dlogm = sol(logm, Val{1})
-        dlogr_dlogm = du_dlogm[1]
-        
-        dr_dlogm = r * dlogr_dlogm
-        
         rho = P^(3/5) * exp(-2*s(logr)/5)
         
         v2_part = v_surf^2 .+ 2*(Phi_surf-Phi)
@@ -63,7 +56,7 @@ function calc_τ(run_params,sol, s, m_face, m_center,  v_surf)
         
         # Cross Section
         sigma = run_params.σ0 * (v_rel / run_params.w)^run_params.n
-        
+        dr_dlogm = exp(logm)/(4 * pi * r^2 * rho)
         # Return dτ/d(logm) = σ * ρ * (dr/d(logm))
         return sigma * rho * dr_dlogm
     end
@@ -95,7 +88,7 @@ function calc_τ(run_params,sol, s, m_face, m_center,  v_surf)
         
        
     end
-    
+  #  loglog(m_face, reverse(τ_vals))
     
     return reverse(v_vals), reverse(τ_vals)
 end
@@ -119,9 +112,6 @@ function calc_evaporation(run_params, sol, s, m_face, m_center, dm_face, ρ,r_ce
     dvs = diff(v_array, dims=2)
     # \dot \u = \int dv 4 pi r^2 \rho/m v f(v) (0.5 v^2) e^-(\tau) d\tau
     #v2 = 2/3 u
-    loglog(r_center, τ_centered[:,1])
-
-    loglog(r_center, τ_centered[:,end])
     #TODO: there should be some geometric factor to only have outgoing v? Is it just 0.5 in the radial orbit approximation? 
     v2dot_vintegrated = -sum((@. 4. / 3.  * pi * r_center^2 * ρ/dm_face * v_centered^3 * maxwellian(v2s, v_centered) * dvs* exp(-τ_centered) * dτ),dims=2)
     #s = log(v2^(3/2)) - log(rho)

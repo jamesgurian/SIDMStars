@@ -10,11 +10,11 @@ using PyPlot
 # 3. Setup Params
 dm_params = RunParams(
     C = 1.0,
-    σ0 = 5e-6, #kpc^2/M_sun
+    σ0 = 5e-5, #kpc^2/M_sun
     w = 10, # km/s
     n = -4.,
     t_end = 1,
-    r_max = 10, #kpc
+    r_max = 5, #kpc
     r_min = 1e-3, #kpc
     snaptimes = range(.01, stop = 1, length=30)
 )
