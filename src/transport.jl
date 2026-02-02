@@ -22,7 +22,7 @@ struct EvaporationParams
     logr::FunctionWrapper{Float64, Tuple{Float64}} 
     dPhi::FunctionWrapper{Float64, Tuple{Float64}} 
     # Entropy profile: Input is logr, Output is Float64
-    s::FunctionWrapper{Float64, Tuple{Float64}}    
+    s::FunctionWrapper{Float64, Tuple{Float64}}   
 
     # Nested parameters and constants
     run_params::RunParams
@@ -46,13 +46,13 @@ function evaporation_integral!(du, u, p, logm)
 
     du[1] = -sigma * ρ * dr_dlogm
     # \dot E(v) = \int  4 pi r^2 \rho v  (0.5 v^2) e^-(\tau) d\tau/dlogm dlogm
-    du[2] =  v2_part^(3/2)  * du[1] *exp(-τ) # 2 * pi * r^2 * ρ * 
+    du[2] =    2 * pi * r^2 * ρ * v2_local^(3/2) * du[1] *exp(-τ) # 2 * pi * r^2 * ρ * 
 end
 
 condition_τ(u,t, integrator) =  integrator.u[1] > 10
             
 cb_τ = DiscreteCallback(condition_τ, terminate!)
-function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
+function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals, ρ_center)
     #each column is one geodesic
     #with its own initial (surface) velocity
     udot_cell = zeros(length(m_face)-1,length(v_vals))
@@ -72,6 +72,7 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
     prob= ODEProblem(evaporation_integral!,u0, m_span)
 
     for (i, v_val) in enumerate((v_vals))
+
         pars = EvaporationParams(x->sol(x)[2], x->sol(x)[1], dPhi, s, run_params, G, v_val^2)
 
         
@@ -81,18 +82,20 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
             if log(m_face[j+1]) < sol_tau.t[end] #if it's after we terminated (high tau)
                 udot_cell[j,i] = 0.
             else
-                udot_cell[j,i] = sol_tau(log(m_face[j+1]))[2] - sol_tau(log(m_face[j]))[2]
+                udot_cell[j,i] =(sol_tau(log(m_face[j+1]))[2] - sol_tau(log(m_face[j]))[2]) / (m_face[j+1] - m_face[j])
             end
         end
         v_array[:, i] .= sqrt.(v_val^2 .+ 2 .* dPhi.(log_m_center))
-    #    loglog(exp.(sol(log_m_center)[1,:]), sol_tau(log_m_center)[1,:])
-
+     #  loglog(exp.(sol(log_m_center)[1,:]), sol_tau(log_m_center)[1,:])
+         
       # loglog(exp.(sol(sol_tau.t)[1,:]), sol_tau[2,:])
     end
-    udot_cell =  udot_cell #./diff(m_face)
     dv = diff(v_array, dims=2)
     v_integrand = maxwellian.(v2s, v_array) .* udot_cell
-    loglog(exp.(sol(log_m_center)[1,:]), abs.(udot_cell))
+    #loglog(exp.(sol(log_m_center)[1,:]), abs.(udot_cell))
+    for k in 1:5
+        #scatter(exp.(sol(log_m_center)[1,:]), abs.(udot_cell[:,k]),s=1)
+    end
     v_integrand_centered = sqrt.(v_integrand[:, 1:end-1] .* v_integrand[:, 2:end])
     udot = -sum(v_integrand_centered .* dv, dims=2)
     #v2 = 2/3 u
@@ -106,8 +109,8 @@ end
 function calc_τ(run_params, dr::Vector{Float64}, Φ_vals, ρ_center,v2_center, v)
     v_vals = sqrt.(v.^2 .- 2 * (Φ_vals .- Φ_vals[end]))
 
-    integrand = ρ_center .* run_params.σ0 .* (sqrt.(v_vals.^2 .+ v2_center) ./ run_params.w).^(run_params.n) .* dr
-        
+    integrand = ρ_center .* run_params.σ0 .* (sqrt.(v_vals.^2 .+ v2_center ) ./ run_params.w).^(run_params.n) .* dr
+        #
     # Integrate along columns
     τ_vals = reverse(cumsum(reverse(integrand, dims=1), dims=1), dims=1)    
     return v_vals, τ_vals
@@ -118,7 +121,7 @@ function calc_evaporation(run_params, Φ::Vector{Float64}, dm, r, dr, ρ, v2s, v
     dvs = diff(v_shifted, dims=2)
     v_centered = sqrt.(v_shifted[:,1:end-1] .* v_shifted[:,2:end])
     τ_centered = sqrt.(τ_vals[:,2:end] .* τ_vals[:,1:end-1])
-  #  loglog(r, τ_vals,"--")
+   # loglog(r, τ_vals,"--")
     #loglog(r, v_shifted, "--")
     #dτ = -diff(vcat(τ_centered, zeros(1,length(v_vals)-1)), dims=1)
     dτ = -diff(vcat(τ_vals, zeros(1,length(v_vals))), dims=1)
@@ -126,10 +129,15 @@ function calc_evaporation(run_params, Φ::Vector{Float64}, dm, r, dr, ρ, v2s, v
     # \dot \u = \int dv 4 pi r^2 \rho/m v f(v) (0.5 v^2) e^-(\tau) d\tau
     #v2 = 2/3 u
     #TODO: there should be some geometric factor to only have outgoing v? Is it just 0.5 in the radial orbit approximation? 
-    loglog(r,  (@. abs.( ρ * v_shifted^3 *dτ .* exp(-τ_vals))),"--")
+   #loglog(r,  (@. abs.(2* pi * r^2 * ρ * dτ .* exp(-τ_vals))/dm),"--")
+  
+    # loglog(r,  (@. abs.( 4 * pi * r^2 /dm * v_shifted^3 *dτ .* exp(-τ_vals))),"--")
     #loglog(r, τ_vals,"--")
-    ylim(.1e-10, 10)
-    #v2dot_vintegrated = -sum((@. 4. / 3.  * pi * r^2 * ρ/dm * v_centered^3 * maxwellian(v2s, v_centered)) .* dvs.* exp.(-τ_centered) .* dτ, dims=2)
+   # ylim(.1e-10, 1000)
+   v_integrand= @. (2* pi * r^2 * ρ * v_shifted^(3/2) * maxwellian(v2s,v_shifted) * dτ * exp(-τ_vals)/dm)
+   v_integrand_centered = sqrt.(v_integrand[:,1:end-1] .* v_integrand[:, 2:end])
+ v2dot_vintegrated = - sum(v_integrand_centered .* dvs,dims=2)
+   #v2dot_vintegrated = -sum((@. 4. / 3.  * pi * r^2 * ρ/dm * v_centered^3 * maxwellian(v2s, v_centered)) .* dvs.* exp.(-τ_centered) .* dτ, dims=2)
     #s = log(v2^(3/2)) - log(rho)
     #dsdt = 3/2 d log(v^2)/dt = 3/2 dv^2/dt /v2
     sdot = 3/2 * v2dot_vintegrated ./ v2s 
