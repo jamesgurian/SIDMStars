@@ -41,7 +41,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     # Returns negative if Pc is too low, positive if Pc is too high
     function get_residual(current_logP)
         prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP, 0.])
-        sol_in = solve(prob_in, callback=cb)
+        sol_in = solve(prob_in, callback=cb,alg=Rosenbrock23(autodiff=false))
         # Case A: Integration completed (Reached M_outer)
         if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
             return (sol_in[end][2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
@@ -56,7 +56,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
 
     # 4. Phase 1: Find a Bracket
     println("Searching for bracket...")
-    step_size = 0.01 # Step size for log(P)
+    step_size = 0.1 # Step size for log(P)
     p_low, p_high = log_P_guess_in, log_P_guess_in
     res_low, res_high = get_residual(p_low), get_residual(p_high)
     
@@ -111,7 +111,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
 
     # 6. Return Final Solution
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])
-    sol = solve(final_prob,callback=cb)
+    sol = solve(final_prob,alg=Rosenbrock23(autodiff=false),callback=cb)
     return sol
 end
 function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, params)

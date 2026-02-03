@@ -85,7 +85,7 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
    
     prob = ODEProblem(hse_system_rho!,u0, M_span, ode_params)
 
-    sol = solve(prob,Rodas4P2(autodiff=false),reltol=1e-12)
+    sol = solve(prob,reltol=1e-5)
     v2_func(m) = sol(m)[2]/(rho_initial(sol(m)[1]))
 
     dv2(m) = 1/rho_initial(sol(m)[1]) * sol(m, Val{1})[2] - 

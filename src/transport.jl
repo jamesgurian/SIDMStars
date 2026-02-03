@@ -100,7 +100,7 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals, Ï
     udot = -sum(v_integrand_centered .* dv, dims=2)
     #v2 = 2/3 u
     #s = (3/2)log(v2) - log(rho)
-    
+    println(udot)
     sdot = udot ./ v2s 
 
 
