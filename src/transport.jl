@@ -38,7 +38,7 @@ function evaporation_integral!(du, u, p, logm)
     P = exp(p.logP(logm))
     r = exp(p.logr(logm))
     m = exp(logm)
-    ρ = P^(3/5) *exp(-2p.s(p.logr(logm))/5)
+    ρ = P^(3/5) *exp(-2p.s(logm)/5)
     v2_local = P/ρ
     v2_rel = v2_part + v2_local
     dr_dlogm = m/(4 * pi * r^2 * ρ)
