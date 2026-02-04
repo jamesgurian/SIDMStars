@@ -55,7 +55,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     end
 
     # 4. Phase 1: Find a Bracket
-    println("Searching for bracket...")
+   # println("Searching for bracket...")
     step_size = 0.1 # Step size for log(P)
     p_low, p_high = log_P_guess_in, log_P_guess_in
     res_low, res_high = get_residual(p_low), get_residual(p_high)
@@ -82,10 +82,10 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
         res_low, res_high = res_high, res_low
     end
     
-    println("Bracket found: [$p_low, $p_high]")
+   # println("Bracket found: [$p_low, $p_high]")
 
     # 5. Phase 2: Bisection Method
-    println("Starting Bisection...")
+    #println("Starting Bisection...")
     iter = 0
     p_mid = (p_high + p_low)/2
     #println("0.5(p_high - p_low)/(p_high+p_low) ", 0.5(p_high - p_low)/(p_high+p_low) )
@@ -103,7 +103,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
         end
     end
     
-    println("Terminated after $iter iterations to Log(Pc) = $p_mid")
+  #  println("Terminated after $iter iterations to Log(Pc) = $p_mid")
 
     # 6. Return Final Solution
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])

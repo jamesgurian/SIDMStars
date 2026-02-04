@@ -57,7 +57,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         ode_params = StructureParams(s_interp, G)
        # loglog(m_center,r_center)
         #@time sol = shoot((log(M_min), log(M_tot)), log_P_guess, log_R_guess, log(r_min), log(p_surf), ode_params)
-        @time sol = shoot_1p((log(M_min), log(M_tot)), log_P_guess, log(r_min), log(p_surf), ode_params)
+        sol = shoot_1p((log(M_min), log(M_tot)), log_P_guess, log(r_min), log(p_surf), ode_params)
         
         #  scatter(exp(sol.t[end]), exp(sol[end][1]))
        
@@ -68,10 +68,10 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         v2_center = P_center ./ ρ_center
         κ_center  = κ.(P_center, s_center) 
         r_face = exp.(sol(log.(m_face))[1,:])
-        loglog(r_center, ρ_center)
+       #loglog(r_center, ρ_center)
       # semilogx(exp.(sol.t), (sol[1,:]))
         #println("logrmin")
-        println("rtot", log(r_face[end]))
+   #     println("rtot", log(r_face[end]))
         r_center = exp.(sol(log.(m_center))[1,:])
                # loglog(m_center,r_center)
 
@@ -86,6 +86,8 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         L_face = zeros(length(m_face))
         prefactor_face = 16 * pi^2 .* r_face[2:end-1].^4 .* ρ_face .* κ_face
         L_face[2:end-1] .= -prefactor_face .* dv2_dm_face
+              #  semilogx(r_face, L_face)
+
         dL_dm = diff(L_face) ./ dm_cell
         dsdt_conduct = -dL_dm ./ v2_center
         slope = (dsdt_conduct[3] - dsdt_conduct[2])/log(dm_between_centers[2])
@@ -112,14 +114,14 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         #sdot_evap = calc_evaporation(run_params, Φ, diff(m_face), r_center, diff(r_face), ρ_center, v2_center, vrange)
         #dsdt = dsdt_conduct #.+ sdot_evap
         dsdt_tot =  dsdt_conduct
- ρ_core =  ρ_center[1] * (r_min[1]/r_center[1])^slope #extrapolate to r_min
+        ρ_core =  ρ_center[1] * (r_min[1]/r_center[1])^slope #extrapolate to r_min
         return dsdt_tot, r_center, sol(log(M_min))[2], sol(log(M_tot))[1], ρ_core, sol
     end
 
 
     snap_idx=1
-  #while t < run_params.t_end
-    for i in 1:10
+  while t < run_params.t_end
+    #
            println("t:", t) 
         
         dlogp_core = (logP_core) - logP_core_old
@@ -133,7 +135,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         s_center .+= dt .* (dsdt)       
         
         t += dt
-        if t > run_params.snaptimes[snap_idx]
+        if t > run_params.snaptimes[snap_idx] && snap_idx <= length(run_params.snaptimes)
             pvals = exp.(sol(log.(m_center))[2,:])
             rvals = exp.(sol(log.(m_center))[1,:])
             ρ_vals =  pvals.^(3/5) .* exp.(-2 .* s_center./ 5)
