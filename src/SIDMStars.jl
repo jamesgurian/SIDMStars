@@ -2,7 +2,6 @@
 """
     SidmStars
 
-A lightweightJulia package for SIDM star structure and boundary-value problems.
 
 
 """
@@ -10,6 +9,7 @@ A lightweightJulia package for SIDM star structure and boundary-value problems.
 module SIDMStars
 using LinearAlgebra
 using DifferentialEquations
+using HDF5
 using ForwardDiff
 using DataInterpolations
 using SpecialFunctions
@@ -25,7 +25,9 @@ include("dm_params.jl")
 include("transport.jl")
 include("util.jl")
 include("init.jl")
+include("snapshot.jl")
 include("evolve.jl")
+
 module Constants
         using PhysicalConstants
         using ..SIDMStars: @import_everything
@@ -39,6 +41,7 @@ export nfw_profile
 export dk_profile
 export setup_dk_profile
 export evolve
+export read_snapshot_file
 # Include implementation files (place implementation in src/bvp.jl)
 
 

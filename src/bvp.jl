@@ -34,14 +34,14 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     cb = DiscreteCallback(condition, affect!)
     
     # settings
-    tol = 1e-15
+    tol = 1e-6
     max_iter = 1000
 
     # 3. Residual Function
     # Returns negative if Pc is too low, positive if Pc is too high
     function get_residual(current_logP)
         prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP, 0.])
-        sol_in = solve(prob_in, callback=cb,reltol=1e-10)
+        sol_in = solve(prob_in, callback=cb,reltol=1e-4)
         # Case A: Integration completed (Reached M_outer)
         if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
             return (sol_in(logM_outer)[2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
@@ -107,7 +107,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
 
     # 6. Return Final Solution
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])
-    sol = solve(final_prob,callback=cb,reltol=1e-10)
+    sol = solve(final_prob,callback=cb,reltol=1e-4)
     return sol
 end
 function shoot(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, params)

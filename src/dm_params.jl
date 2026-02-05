@@ -8,5 +8,6 @@
     r_max::Float64
     r_min::Float64
     snaptimes::Vector{Float64}
+    snap_loc::String
 end
 

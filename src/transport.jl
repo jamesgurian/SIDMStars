@@ -30,7 +30,7 @@ struct EvaporationParams
     v2_i::Float64
 end
 
-#tau of surface velocity v (v should be scalar or row vector)
+#tau of surface velocity v 
 function evaporation_integral!(du, u, p, logm)
     τ = u[1]
    #Edot = u[2]
@@ -52,7 +52,7 @@ end
 condition_τ(u,t, integrator) =  integrator.u[1] > 10
             
 cb_τ = DiscreteCallback(condition_τ, terminate!)
-function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals, ρ_center)
+function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
     #each column is one geodesic
     #with its own initial (surface) velocity
     udot_cell = zeros(length(m_face)-1,length(v_vals))
@@ -71,36 +71,32 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals, �
 
     prob= ODEProblem(evaporation_integral!,u0, m_span)
 
-    for (i, v_val) in enumerate((v_vals))
+    for i in eachindex(v_vals)
 
-        pars = EvaporationParams(x->sol(x)[2], x->sol(x)[1], dPhi, s, run_params, G, v_val^2)
+        pars = EvaporationParams(x->sol(x)[2], x->sol(x)[1], dPhi, s, run_params, G, v_vals[i]^2)
 
         
         prob= remake(prob, p=pars)#ODEProblem(evaporation_integral!,u0, m_span, pars)
         sol_tau = solve(prob, callback = cb_τ)
         for j in 1:(length(m_face)-1)
-            if log(m_face[j+1]) < sol_tau.t[end] #if it's after we terminated (high tau)
+            if log_m[j] < sol_tau.t[end] #if it's after we terminated (high tau)
                 udot_cell[j,i] = 0.
             else
-                udot_cell[j,i] =(sol_tau(log(m_face[j+1]))[2] - sol_tau(log(m_face[j]))[2]) / (m_face[j+1] - m_face[j])
+                du_cell =(sol_tau(log(m_face[j+1]))[2] - sol_tau(log(m_face[j]))[2]) / (m_face[j+1] - m_face[j])
+                udot_cell[j,i] = min(du_cell, 0.0) #guard against small positive du
             end
         end
-        v_array[:, i] .= sqrt.(v_val^2 .+ 2 .* dPhi.(log_m_center))
+        v_array[:, i] .= sqrt.(v_vals[i]^2 .+ 2 .* dPhi.(log_m_center))
      #  loglog(exp.(sol(log_m_center)[1,:]), sol_tau(log_m_center)[1,:])
          
       # loglog(exp.(sol(sol_tau.t)[1,:]), sol_tau[2,:])
     end
     dv = diff(v_array, dims=2)
     v_integrand = maxwellian.(v2s, v_array) .* udot_cell
-    #loglog(exp.(sol(log_m_center)[1,:]), abs.(udot_cell))
-    for k in 1:5
-        #scatter(exp.(sol(log_m_center)[1,:]), abs.(udot_cell[:,k]),s=1)
-    end
     v_integrand_centered = sqrt.(v_integrand[:, 1:end-1] .* v_integrand[:, 2:end])
-    udot = -sum(v_integrand_centered .* dv, dims=2)
+    udot = -sum(v_integrand_centered .* dv, dims=2) #dv is negative, so we need a -
     #v2 = 2/3 u
     #s = (3/2)log(v2) - log(rho)
-    println(udot)
     sdot = udot ./ v2s 
 
 
