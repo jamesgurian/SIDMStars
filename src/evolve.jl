@@ -86,7 +86,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglectting the mass exterior to the integration region
         v2_esc_core =  2 * sol[end][3]
        # println("v2_surf", v2_esc_surface )
-        vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(2*v2_esc_core)),length=50))
+        vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(2*v2_esc_core)),length=5))
         #
         #Φ = calc_Φ(G, m_center, M_tot, exp(sol(log(M_tot))[1]),r_center, diff(r_face))
        # v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglectting the mass exterior to the integration region
@@ -102,7 +102,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         dsdt_tot =  dsdt_conduct .+ dsdt_evap
         #println(dsdt_evap)
         #loglog(r_center, abs.(s_center ./ dsdt_conduct))
-        #loglog(r_center, abs.(s_center ./ dsdt_evap))
+       # loglog(r_center, abs.(s_center ./ dsdt_evap))
         dt_diffusion = minimum(dm_between_centers .^2 ./prefactor_face)
         ρ_core =  ρ_center[1] * (r_min[1]/r_center[1])^slope #extrapolate to r_min
         return dsdt_tot, r_center, sol(log(M_min))[2], sol(log(M_tot))[1], ρ_core, sol, dt_diffusion
@@ -111,6 +111,7 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
 
     snap_idx=1
   while t < run_params.t_end
+  #for i in 1:10
            println("t:", t) 
         
         dlogp_core = (logP_core) - logP_core_old
@@ -135,15 +136,4 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
   
        
    end
-   return snap_dict
-end
-
-function write_snapshot!(snap_dict, i,t,p, r, ρ,s,dsdt)
-    snap_dict["t"][i,:] .= t
-    snap_dict["P"][i,:] .= p
-    snap_dict["r"][i,:] .= r
-    snap_dict["ρ"][i,:] .= ρ
-    snap_dict["s"][i,:] .= s
-    snap_dict["dsdt"][i,:] .= dsdt
-
 end

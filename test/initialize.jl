@@ -13,10 +13,10 @@ dm_params = RunParams(
     σ0 = 1.04e-6, #kpc^2/M_sun
     w = 10, # km/s
     n = -4.,
-    t_end = 4.5,
+    t_end = 7,
     r_max = 2, #kpc
     r_min = 1e-3, #kpc
-    snaptimes = range(.01, stop = 4.5, length=30),
+    snaptimes = range(.01, stop = 7, length=30),
     snap_loc="init_out.hdf5"
 )
 
