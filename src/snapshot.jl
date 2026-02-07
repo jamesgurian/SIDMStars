@@ -1,5 +1,6 @@
 function init_hdf5(filename, n_steps, n_grid)
-    fid = h5open(filename, "w")
+    
+    h5open(filename, "w") do fid
     
     # Define the dimensions (Time steps x Spatial grid)
     dims = (n_grid, n_steps)
@@ -14,22 +15,22 @@ function init_hdf5(filename, n_steps, n_grid)
     create_dataset(fid, "s", Float64, dims, chunk=(n_grid,1))
     create_dataset(fid, "dsdt", Float64, dims, chunk=(n_grid,1))
     
-
-    return fid
+    end
 end
 
-function write_snapshot!(h5_file, i, t, p, r, m, ρ, s, dsdt)
+function write_snapshot!(filename, i, t, p, r, m, ρ, s, dsdt)
     # HDF5 allows you to write to specific hyperslabs (slices) on disk
+    h5open(filename, "r+") do h5_file
     h5_file["t"][i] = t 
     h5_file["P"][:, i] = p  
     h5_file["r"][:, i] = r
     h5_file["m"][:, i] = m
 
-    h5_file["rho"][:, i] = ρ  # Best to avoid non-ASCII keys in some HDF5 viewers
+    h5_file["rho"][:, i] = ρ 
     h5_file["s"][:, i] = s
     h5_file["dsdt"][:, i] = dsdt
+    end
 end
-using HDF5
 
 """
     read_snapshot_file(filename)
