@@ -31,6 +31,8 @@ struct EvaporationParams
 end
 
 #tau of surface velocity v 
+#we integrate the optical depth, energy loss, and mass loss along trajectories
+#this is a relatively heavy implementation, but it will be accurate even for low grid resolution 
 function evaporation_integral!(du, u, p, logm)
     τ = u[1]
    #Edot = u[2]
