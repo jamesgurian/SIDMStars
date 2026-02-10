@@ -20,13 +20,18 @@ using Unitful
 using UnitfulAstro
 using StaticArrays
 using PyPlot
+using Roots
+using NumericalIntegration
+
 include("bvp.jl")
-include("dm_params.jl")
+include("common.jl")
 include("transport.jl")
 include("util.jl")
 include("init.jl")
 include("snapshot.jl")
+include("convect.jl")
 include("evolve.jl")
+
 
 module Constants
         using PhysicalConstants

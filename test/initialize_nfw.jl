@@ -11,7 +11,7 @@ using PyPlot
 # 3. Setup Params
 dm_params = RunParams(
     C = 1.0,
-    σ0 = 1e-8, #cm2/g
+    σ0 = 1e-8, #kpc^2/msun
     w = 10, # km/s
     n = 0.0,
     t_end = 1.0,

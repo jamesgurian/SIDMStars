@@ -32,7 +32,7 @@ end
 
 #tau of surface velocity v 
 #we integrate the optical depth, energy loss, and mass loss along trajectories
-#this is a relatively heavy implementation, but it will be accurate even for low grid resolution 
+#this is a relatively heavy implementation, but it should be accurate even for low grid resolution 
 function evaporation_integral!(du, u, p, logm)
     τ = u[1]
    #Edot = u[2]
@@ -108,7 +108,8 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
     #v2 = 2/3 u
     #s = (3/2)log(v2) - log(rho)
     sdot = udot ./ v2s .-  mdot ./ diff(m_face)
+    #it's silly to diff then cumsum, when we have the integral directly but...
     mdot_cum = cumsum(mdot,dims=1)
-    return sdot, mdot, mdot_cum
+    return sdot, mdot_cum
 
 end

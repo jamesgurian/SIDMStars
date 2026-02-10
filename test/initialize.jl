@@ -22,10 +22,4 @@ dm_params = RunParams(
 
 profile = setup_dk_profile(1e6, 7, 1, z=10)
 sol_init = initialize_profile(dm_params,profile, p_outer=0);
-#semilogx(sol[1].t, sol[2].(sol[1].t))
-#savefig("out.png")
 sol = evolve(dm_params,profile,gridpoints=100,eps=0.1, mass_min_frac=1e-4);
-
-#@profview sol = evolve(dm_params,profile,gridpoints=200,eps=0.1, mass_min_frac=1e-4);
-
-#@profview sol = evolve(dm_params, x -> nfw_profile(1, 1.0e7,  x),gridpoints=50,eps=0.001, mass_min_frac=1e-4);

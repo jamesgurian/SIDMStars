@@ -1,11 +1,4 @@
 
-struct StructureParams
-    s::FunctionWrapper{Float64, Tuple{Float64}}
-    G::Float64
-end
-
-Base.eltype(::Type{<:StructureParams}) = Float64
-
 
 function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gridpoints=50)
     sol, L, s, dsdt, t_kh, M_tot = initialize_profile(run_params, rho_initial,p_outer=p_outer,mass_min_frac=mass_min_frac)
@@ -17,7 +10,6 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
 
     M_tot -= 1e-4*M_tot #bvp has a hard time with the true zero pressure BC, because we log transform P
     p_surf = sol(M_tot)[2]
-    println("surf", p_surf)
     
 
     function κ(P, s)
@@ -28,49 +20,55 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         return k_tot
     end
     
+    #initialize the mechanical and thermodynamic state
     t=0.
     m_face = exp.(range(log(M_min), stop = log(M_tot), length=gridpoints))
     m_center = sqrt.(m_face[1:end-1] .* m_face[2:end])
     r_center = sol(m_center)[1,:]
+    r_face = sol(m_face)[1,:]
+    
+
     logP_core = log(sol(M_min)[2])
     logP_core_old = logP_core
     dm_cell  = diff(m_face)
     s_center = s.(m_center) 
+    P_center = sol(m_center)[2,:]
+    ρ_center  = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
+    v2_center = P_center ./ ρ_center
     rspan = (log(M_min), log(M_tot))
     ode_params = StructureParams(s, G)
     ρ_core = M_min/(4/3 * pi * r_min^3)
     logrmax = log(sol(M_tot)[1])
-    println("rtot, ", sol(M_tot)[1])
-    println("rmin", sol(M_min)[1])
-    println("mtot", log(M_tot))
     logrmax_old = logrmax
     rspan = (log(M_min), log(M_tot))
-
     init_hdf5(run_params.snap_loc, length(run_params.snaptimes), gridpoints-1)
-    #I'm not really sure this should be a closure. It's convenient having \kappa in scope but otherise might just be confsuing
-    function explicit_dsdt(s_center, r_center, ρ_core, log_P_guess, log_R_guess)
-        s_interp = AkimaInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Linear)
+
+
+    #I'm not really sure this should be a closure. It's convenient having \kappa in scope but otherwise might just be confsuing
+    function explicit_dsdt(s_interp, s_center, log_P_guess)
         ode_params = StructureParams(s_interp, G)
         sol = shoot_1p((log(M_min), log(M_tot)), log_P_guess, log(r_min), log(p_surf), ode_params)
         
         
-        m_face = exp.(range(log(M_min), stop = log(M_tot), length=gridpoints))
-        m_center = sqrt.(m_face[1:end-1] .* m_face[2:end])
-        P_center = exp.(sol(log.(m_center))[2,:]) 
+        m_face .= exp.(range(log(M_min), stop = log(M_tot), length=gridpoints))
+        m_center .= sqrt.(m_face[1:end-1] .* m_face[2:end])
+        P_center .= exp.(sol(log.(m_center))[2,:]) 
 
         # Calculate derived center variables
-        ρ_center  = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
-        v2_center = P_center ./ ρ_center
+        ρ_center  .= P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
+        v2_center .= P_center ./ ρ_center
         κ_center  = κ.(P_center, s_center) 
-        r_face = exp.(sol(log.(m_face))[1,:])
-        r_center = exp.(sol(log.(m_center))[1,:])
+        r_face .= exp.(sol(log.(m_face))[1,:])
+        r_center .= exp.(sol(log.(m_center))[1,:])
 
+        #set r_min by assuming the mass-radius relationship is a power law and extrapolating
         slope = log(r_center[2]/r_center[1])/log(m_center[2]/m_center[1])
         r_min = r_center[1] * (M_min/m_center[1])^slope
         dm_between_centers = diff(m_center)
 
+
         dv2_dm_face = diff(v2_center) ./ dm_between_centers
-        κ_face = 2*(κ_center[1:end-1] .* κ_center[2:end]) ./(κ_center[1:end-1] .+ κ_center[2:end]) # mean
+        κ_face = 2*(κ_center[1:end-1] .* κ_center[2:end]) ./(κ_center[1:end-1] .+ κ_center[2:end]) #harmonic mean
     
         ρ_face  = sqrt.(ρ_center[1:end-1] .* ρ_center[2:end])
         L_face = zeros(length(m_face))
@@ -85,50 +83,40 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
         slope = (dsdt_conduct[end] - dsdt_conduct[end-1])/log(dm_between_centers[end])
         dsdt_conduct[end] = dsdt_conduct[end-1] + slope * log(dm_between_centers[end])
         slope = log(ρ_center[2]/ρ_center[1])/log(r_center[2]/r_center[1])
-        v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglectting the mass exterior to the integration region
+
+        #now for evaporation
+        v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglecting the mass exterior to the integration region
         v2_esc_core =  2 * sol[end][3]
-       # println("v2_surf", v2_esc_surface )
-        vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(2*v2_esc_core)),length=5))
-        #
-        #Φ = calc_Φ(G, m_center, M_tot, exp(sol(log(M_tot))[1]),r_center, diff(r_face))
-       # v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglectting the mass exterior to the integration region
-        #v2_esc_core = -2 * Φ[1]
-        dsdt_evap, mdot_evap, mdot_cum = calc_evaporation(run_params, G, sol, s_interp, m_face, m_center, v2_center, vrange)
-        #sdot_evap = calc_evaporation(run_params, Φ, diff(m_face), r_center, diff(r_face), ρ_center, v2_center, vrange)
-        #dsdt = dsdt_conduct #.+ sdot_evap
+        vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt.(2*v2_esc_core)),length=gridpoints))
+       
+        dsdt_evap, mdot_cum = calc_evaporation(run_params, G, sol, s_interp, m_face, m_center, v2_center, vrange)
         dsdt_tot =  dsdt_conduct .+ dsdt_evap
-        #println(dsdt_evap)
-        #loglog(r_center, abs.(1 ./ dsdt_conduct))
-        #loglog(r_center, abs.(diff(m_face) ./ mdot_evap),"--")
         dt_diffusion = minimum(dm_between_centers .^2 ./prefactor_face)
         ρ_core =  ρ_center[1] * (r_min[1]/r_center[1])^slope #extrapolate to r_min
-        return dsdt_tot, mdot_cum, r_center, sol(log(M_min))[2], sol(log(M_tot))[1], ρ_core, sol, dt_diffusion
+        return dsdt_tot, mdot_cum, sol(log(M_min))[2], ρ_core, dt_diffusion
     end
 
 
     snap_idx=1
-  while t < run_params.t_end
-  #for i in 1:10
-           println("t:", t) 
+   while t < run_params.t_end
+        println("t:", t) 
         
         dlogp_core = (logP_core) - logP_core_old
         logP_guess = logP_core + dlogp_core
-        dlogrmax = logrmax - logrmax_old
         logP_core_old = logP_core
+        s_interp = AkimaInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Linear)
 
-        logRguess = logrmax 
-        logrmax_old = logrmax
-        dsdt, mdot_cum,r_center, logP_core, logrmax, ρ_core, sol, dt_diffusion = explicit_dsdt(s_center, r_center, ρ_core, logP_guess, logRguess)
+        dsdt, mdot_cum, logP_core, ρ_core, dt_diffusion = explicit_dsdt(s_interp, s_center, logP_guess)
         s_center .+= dt .* (dsdt)  
         m_center .+= mdot_cum .* dt
         M_tot += mdot_cum[end]  *dt    
-        
+
         t += dt
         if t > run_params.snaptimes[snap_idx] && snap_idx <= length(run_params.snaptimes)
             pvals = exp.(sol(log.(m_center))[2,:])
             rvals = exp.(sol(log.(m_center))[1,:])
             ρ_vals =  pvals.^(3/5) .* exp.(-2 .* s_center./ 5)
-            write_snapshot!(run_params.snap_loc, snap_idx, t, pvals, rvals,m_center,  ρ_vals ,s_center, dsdt)
+            write_snapshot!(run_params.snap_loc, snap_idx, t, pvals, rvals,m_center,  ρ_vals, s_center, dsdt)
             snap_idx += 1;
         end
         dt = eps * min(dt_diffusion, (1/maximum(abs.(1 ./ s_center))))
