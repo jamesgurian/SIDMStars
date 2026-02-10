@@ -1,8 +1,7 @@
 using PyPlot
 using DataInterpolations
 using Printf
-include("../src/SIDMStars.jl")
-using .SIDMStars
+using SIDMStars
 N = 200
 m = range(0.1, 1.0, length=N) # Mass coordinate
 s_rad = collect(m)            # Base stable profile (linear rise)

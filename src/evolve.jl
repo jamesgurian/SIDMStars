@@ -62,7 +62,8 @@ function evolve(run_params, rho_initial;eps=.005,p_outer=0,mass_min_frac=1e-6,gr
     write_snapshot!(run_params.snap_loc, snap_idx, t, P_center, r_center,m_center,  ρ_center, s_center, dsdt)
 
 
-
+    #Note that this mutates the entire state, not just dsdt. We should probably make this a function rather than a closure
+    #and pass everything explicitly
     function explicit_dsdt!(dsdt, s_interp, s_center, log_P_guess)
         ode_params = StructureParams(s_interp, G)
         sol = shoot_1p((log(M_min), log(M_tot)), log_P_guess, log(r_min), log(p_surf), ode_params)

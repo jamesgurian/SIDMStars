@@ -1,7 +1,6 @@
 
-include("../src/SIDMStars.jl")
 
-using .SIDMStars
+using SIDMStars
 using PyPlot
 
 #using PyPlot
