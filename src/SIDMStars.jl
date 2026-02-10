@@ -47,11 +47,8 @@ export dk_profile
 export setup_dk_profile
 export evolve
 export read_snapshot_file
-# Include implementation files (place implementation in src/bvp.jl)
-
-
-# Export the public API
 
 
 
-end # module SidmStars
+
+end 

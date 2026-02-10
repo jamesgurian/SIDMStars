@@ -17,7 +17,8 @@ dm_params = RunParams(
     t_end = 1.0,
     r_max = 40, #kpc
     r_min = 1e-3, #kpc
-    snaptimes = (range(0, stop = 1, length=10))
+    snap_interval_time = 0.1,
+    snap_interval_density = 0.1
 )
 sol_init = initialize_profile(dm_params, x-> nfw_profile(1, 1e7, x), p_outer=1e-20);
 #semilogx(sol[1].t, sol[2].(sol[1].t))

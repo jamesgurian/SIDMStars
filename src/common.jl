@@ -7,7 +7,8 @@
     t_end::Float64
     r_max::Float64
     r_min::Float64
-    snaptimes::Vector{Float64}
+    snap_interval_time::Float64
+    snap_interval_density::Float64
     snap_loc::String
 end
 

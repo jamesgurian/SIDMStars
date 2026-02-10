@@ -1,34 +1,39 @@
-function init_hdf5(filename, n_steps, n_grid)
-    
+using HDF5
+
+function init_hdf5(filename, n_grid)
     h5open(filename, "w") do fid
-    
-    # Define the dimensions (Time steps x Spatial grid)
-    dims = (n_grid, n_steps)
-    
-    # Create datasets with Float64 precision
-    create_dataset(fid, "t", Float64, (n_steps,), chunk=(n_steps,))
-    # We use 'chunking' to optimize how data is written to disk
-    create_dataset(fid, "P", Float64, dims, chunk=(n_grid,1))
-    create_dataset(fid, "r", Float64, dims, chunk=(n_grid,1))
-    create_dataset(fid, "m", Float64, dims, chunk=(n_grid,1))
-    create_dataset(fid, "rho", Float64, dims, chunk=(n_grid,1))
-    create_dataset(fid, "s", Float64, dims, chunk=(n_grid,1))
-    create_dataset(fid, "dsdt", Float64, dims, chunk=(n_grid,1))
-    
+        # Define initial dimensions and 'unlimited' max dimensions (-1)
+        # (n_grid, 0) means we start with zero columns
+        initial_dims = (n_grid, 0)
+        max_dims = (n_grid, -1) 
+        
+        # 'chunk' is mandatory for extensible datasets
+        # We chunk by 1 column at a time for time-series snapshots
+        create_dataset(fid, "t", Float64, ((0,), (-1,)), chunk=(1,))
+        
+        # Grid-based datasets
+        for name in ["P", "r", "m", "rho", "s", "dsdt"]
+            create_dataset(fid, name, Float64, (initial_dims, max_dims), chunk=(n_grid, 1))
+        end
     end
 end
 
 function write_snapshot!(filename, i, t, p, r, m, ρ, s, dsdt)
-    # HDF5 allows you to write to specific hyperslabs (slices) on disk
-    h5open(filename, "r+") do h5_file
-    h5_file["t"][i] = t 
-    h5_file["P"][:, i] = p  
-    h5_file["r"][:, i] = r
-    h5_file["m"][:, i] = m
+    h5open(filename, "r+") do fid
+        # 1. Resize datasets to accommodate the i-th entry
+        HDF5.set_extent_dims(fid["t"], (i,))
+        for name in ["P", "r", "m", "rho", "s", "dsdt"]
+            HDF5.set_extent_dims(fid[name], (size(fid[name], 1), i))
+        end
 
-    h5_file["rho"][:, i] = ρ 
-    h5_file["s"][:, i] = s
-    h5_file["dsdt"][:, i] = dsdt
+        # 2. Write the data to the newly created column
+        fid["t"][i] = t 
+        fid["P"][:, i] = p  
+        fid["r"][:, i] = r
+        fid["m"][:, i] = m
+        fid["rho"][:, i] = ρ 
+        fid["s"][:, i] = s
+        fid["dsdt"][:, i] = dsdt
     end
 end
 

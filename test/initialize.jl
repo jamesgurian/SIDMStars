@@ -16,7 +16,8 @@ dm_params = RunParams(
     t_end = 7,
     r_max = 2, #kpc
     r_min = 1e-3, #kpc
-    snaptimes = range(.01, stop = 7, length=30),
+    snap_interval_time = 0.1,
+    snap_interval_density = 0.1,
     snap_loc="init_out.hdf5"
 )
 

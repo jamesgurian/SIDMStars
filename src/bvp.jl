@@ -16,7 +16,7 @@ function hse_system!(du,u,p,logm)
         du[3] = p.G * m^2/(4 * pi * r^4 * ρ)
     end
 
-#hse equations used by init
+#hse equations used by init (not log transformed, for no good reason)
 function hse_system_rho!(du,u,p,m)
     r = u[1]
     P = u[2]
@@ -101,9 +101,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
         end
     end
     
-  #  println("Terminated after $iter iterations to Log(Pc) = $p_mid")
 
-    # 6. Return Final Solution
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])
     sol = solve(final_prob,callback=cb,reltol=1e-4)
     return sol

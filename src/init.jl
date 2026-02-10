@@ -98,8 +98,7 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
 
     s_func(m) = log(sol(m)[2]^(3/2)/rho_initial(sol(m)[1])^(5/2)) 
     dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
-    t_kh = abs.(sol.t[2:end] .* v2_func.(sol.t[2:end]) ./ L_func.(sol.t[2:end]))
     
-    return sol, L_func, s_func, dsdt, t_kh, M_tot
+    return sol, s_func, M_tot
 end
 
