@@ -8,5 +8,5 @@ Open the package manager in Julia by typing `]`
 pkg> dev /path/to/SIDMStars
 ```
 ## Running
-See `test/initialize.jl`
+See `test/run_diemer_kravtsov.jl`
 
