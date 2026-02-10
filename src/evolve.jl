@@ -115,7 +115,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         slope = (dsdt_conduct[end] - dsdt_conduct[end-1])/log(dm_between_centers[end])
         dsdt_conduct[end] = dsdt_conduct[end-1] + slope * log(dm_between_centers[end])
         
-        ρ_core = 4/3 * pi * M_min/r_min^3
+        ρ_core = M_min/(4/3 * pi * r_min^3)
         P_core = sol(log(M_min))[2]
         
         dt_diff_array .= dm_between_centers .^2 ./prefactor_face
