@@ -21,6 +21,7 @@ using UnitfulAstro
 using StaticArrays
 using PyPlot
 using Roots
+using PrecompileTools
 using NumericalIntegration
 
 include("bvp.jl")
@@ -31,6 +32,7 @@ include("init.jl")
 include("snapshot.jl")
 include("convect.jl")
 include("evolve.jl")
+
 
 
 module Constants
@@ -49,6 +51,12 @@ export evolve
 export read_snapshot_file
 
 
-
+@setup_workload begin
+    
+    @compile_workload begin
+    
+        include("precompile_load.jl")
+    end
+end
 
 end 
