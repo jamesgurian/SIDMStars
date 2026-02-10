@@ -1,5 +1,6 @@
 function convect!(s_interp, s_center, v2_center,  m_center)
     #while there is a negative entropy gradient
+    diff(s_center)
     while !issorted(s_center)
         #find the first region 
         
@@ -71,24 +72,26 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
 
     #
     tol = 1e-5
-    max_iters=10
-    s_current = 0.99 * s_center[peak_idx]
+    max_iters=100
+    s_current =  s_center[peak_idx] - 1e-5 * s_center[peak_idx]
     logm_a = log(m_center[lower_idx]) #the lower bound on m_a 
     logm_b =log(m_center[upper_idx]) #the upper bound on m_b
     logm_lower = logm_a
     logm_upper = logm_b
-            
     for _ in 1:max_iters
         objective(logm) = s_interp(logm) - s_current
-
+        
         #we first find m_a and m_b by enforcing continuity on s
-        if (s_center[lower_idx]  < s_current) && (lower_idx < peak_idx) #if we actually have a bracketing interval
+       
+        
+        if (s_center[lower_idx]  < s_current < s_center[peak_idx])  && (lower_idx < peak_idx) #if we actually have a bracketing interval
             logm_a = find_zero(objective, (logm_lower, logm_peak))
         else
+
             logm_a = logm_lower
         end
 
-        if (s_center[upper_idx] > s_current) && (upper_idx > valley_idx)
+        if (s_center[upper_idx] > s_current > s_center[valley_idx]) && (upper_idx > valley_idx)
             logm_b = find_zero(objective, (logm_valley, logm_upper))
         else
             logm_b = logm_upper
@@ -114,6 +117,6 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
         end
     end
 
-error("Convection solver failed to converge")
+error("Convective adjustment failed to converge")
 
 end

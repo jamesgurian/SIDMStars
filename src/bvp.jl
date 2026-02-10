@@ -40,7 +40,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     cb = DiscreteCallback(condition, affect!)
     
     # settings
-    tol = 1e-6
+    tol = 1e-8
     max_iter = 1000
 
     # Returns negative if Pc is too low, positive if Pc is too high
@@ -100,9 +100,12 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
             p_high = p_mid # Root is in lower half
         end
     end
+    if iter == max_iter
+        error("Shooting did not converge")
+    end
     
 
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])
-    sol = solve(final_prob,callback=cb,reltol=1e-4)
+    sol = solve(final_prob,callback=cb,reltol=1e-6)
     return sol
 end

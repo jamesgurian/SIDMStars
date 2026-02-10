@@ -1,5 +1,5 @@
-f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
-
+#f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
+f_k5(v_over_w,n) = (1/6) * (sqrt(2)*v_over_w)^n * gamma(n/2 + 4) 
 function Kinv_smfp(v2, dm_params) 
     b = 25 * sqrt(pi)/32 #smfp coefficient
 
@@ -31,7 +31,7 @@ struct EvaporationParams
 end
 
 #tau of surface velocity v 
-#we integrate the optical depth, energy loss, and mass loss along trajectories
+#we integrate the optical depth, energy loss, and mass loss along particle trajectories
 #this is a relatively heavy implementation, but it should be accurate even for low grid resolution 
 function evaporation_integral!(du, u, p, logm)
     τ = u[1]
@@ -81,7 +81,7 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
 
         pars = EvaporationParams(x->sol(x)[2], x->sol(x)[1], dPhi, s, run_params, G, v_vals[i]^2)
         prob= remake(prob, p=pars)
-        sol_tau = solve(prob, callback = cb_τ)
+        sol_tau = solve(prob, callback = cb_τ, abstol = 1e-3, reltol = 1e-3)
         for j in 1:(length(m_face)-1)
             if log_m[j] < sol_tau.t[end] #if it's after we terminated (high tau)
                 udot_cell[j,i] = 0.

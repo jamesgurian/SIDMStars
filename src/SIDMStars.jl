@@ -54,8 +54,9 @@ export read_snapshot_file
 @setup_workload begin
     
     @compile_workload begin
-    
+        redirect_stdout(devnull) do
         include("precompile_load.jl")
+        end
     end
 end
 
