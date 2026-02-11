@@ -58,6 +58,7 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
 
     logm_valley = log(m_center[valley_idx]) #the mass at the minimum
     logm_peak = log(m_center[peak_idx])
+    logm_upper = log(m_center[upper_idx])
     m_range = (m_center[lower_idx:upper_idx])
     logm_range = log.(m_range)
     v2_range = v2_center[lower_idx:upper_idx]
@@ -84,14 +85,14 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
         #we first find m_a and m_b by enforcing continuity on s
        
         
-        if (s_center[lower_idx]  < s_current < s_center[peak_idx])  && (lower_idx < peak_idx) #if we actually have a bracketing interval
+        if (s_interp(logm_lower)  < s_current < s_interp(logm_peak))  && (lower_idx < peak_idx) #if we actually have a bracketing interval
             logm_a = find_zero(objective, (logm_lower, logm_peak))
         else
 
             logm_a = logm_lower
         end
 
-        if (s_center[upper_idx] > s_current > s_center[valley_idx]) && (upper_idx > valley_idx)
+        if (s_interp(logm_upper) > s_current > s_interp(logm_valley)) && (upper_idx > valley_idx)
             logm_b = find_zero(objective, (logm_valley, logm_upper))
         else
             logm_b = logm_upper
