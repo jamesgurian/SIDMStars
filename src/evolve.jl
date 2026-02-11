@@ -25,8 +25,11 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     t_sub = 0.
     dt_kh = 0.
     m_face = collect(range((M_min), stop = (M_tot), length=gridpoints))
+    x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1)
+    m_face = M_min .+ (M_tot - M_min) .* x
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
    # m_center = sqrt.(m_face[1:end-1] .* m_face[2:end])
+   
     logm_center = log.(m_center)
     logm_face = log.(m_face)
     r_center = sol(m_center)[1,:]
@@ -72,10 +75,10 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
     #Note that this mutates the entire state, not just dsdt. We should probably make this a function rather than a closure
     #and pass everything explicitly
-    function explicit_dsdt_conduction!(dsdt, s_interp, s_center, log_P_guess)
+    function explicit_dsdt_conduction!(dsdt_conduct, s_interp, s_center, log_P_guess)
         ode_params = StructureParams(s_interp, G)
         sol = shoot_1p((log(M_min), log(M_tot)), log_P_guess, log(r_min), log(p_surf), ode_params)
-        m_face .= collect(range(M_min, stop = M_tot, length = gridpoints))
+        m_face = M_min .+ (M_tot - M_min) .* x
         m_center .= 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
 
         logm_face .= log.(m_face)
@@ -136,7 +139,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             logP_core_old = logP_core
             #we need a monotonicity preserving interpolant for convection...
             s_interp = PCHIPInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Linear)
-            sol, logP_core, ρ_core, dt_diffusion = explicit_dsdt_conduction!(dsdt, s_interp, s_center, logP_guess)
+            sol, logP_core, ρ_core, dt_diffusion = explicit_dsdt_conduction!(dsdt_conduct, s_interp, s_center, logP_guess)
             s_center .+= dt_diffusion .* (dsdt_conduct .+ dsdt_evap)  
             m_center .+= mdot_cum .* dt_diffusion
             M_tot += mdot_cum[end] .* dt_diffusion
