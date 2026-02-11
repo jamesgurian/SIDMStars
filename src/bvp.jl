@@ -1,5 +1,5 @@
 struct StructureParams
-    s::FunctionWrapper{Float64, Tuple{Float64}}
+    s::FunctionWrapper{Float64, Tuple{Float64}} 
     G::Float64
 end
 
@@ -46,12 +46,11 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     # Returns negative if Pc is too low, positive if Pc is too high
     function get_residual(current_logP)
         prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP, 0.])
-        sol_in = solve(prob_in, callback=cb,reltol=1e-4)
-        # Case A: Integration completed (Reached M_outer)
+        sol_in = solve(prob_in, callback=cb,reltol=1e-8)
+        #if Integration completed (Reached M_outer)
         if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
             return (sol_in(logM_outer)[2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
             
-        # Case B: Terminated early (Pressure dropped too fast)
         else
             # Negative Residual (Ran out of pressure too early)
            
@@ -77,7 +76,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     end
     
     if sign(res_low) == sign(res_high)
-        error("Could not bracket the root. Try a better initial guess.")
+        error("Could not bracket the root.")
     end
     
     if res_low > 0
@@ -106,6 +105,6 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     
 
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])
-    sol = solve(final_prob,callback=cb,reltol=1e-6)
+    sol = solve(final_prob,callback=cb,reltol=1e-8)
     return sol
 end

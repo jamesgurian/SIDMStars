@@ -35,7 +35,7 @@ function calc_Φ(G, m_centers, m_tot, rmax, r_centers, drs)
     phivals = -(reverse(cumsum(reverse(G * m_centers .* drs ./ r_centers.^2 ))) .+ G*m_tot/rmax)
 end
 
-#speed distirbution for 
+#speed distribution for 
 #1d squared velocity dispersion v2, at velocity v
 #integrates to unity on [0,Inf]
 function maxwellian(v2, v)

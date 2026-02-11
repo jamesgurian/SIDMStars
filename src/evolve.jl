@@ -23,7 +23,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     #initialize the mechanical and thermodynamic state
     t=0.
     t_sub = 0.
-    dt = 0.
     dt_kh = 0.
     m_face = collect(range((M_min), stop = (M_tot), length=gridpoints))
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
@@ -67,8 +66,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     s_interp = nothing
     t_prev_snap = 0.
     snap_idx = 1
-    write_snapshot!(run_params.snap_loc, snap_idx, t, P_center, r_center,m_center,  ρ_center, s_center, dsdt)
-
+    if !isinf(run_params.snap_interval_time)
+        write_snapshot!(run_params.snap_loc, snap_idx, t, P_center, r_center,m_center,  ρ_center, s_center, dsdt)
+    end
 
     #Note that this mutates the entire state, not just dsdt. We should probably make this a function rather than a closure
     #and pass everything explicitly
