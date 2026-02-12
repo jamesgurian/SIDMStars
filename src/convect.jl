@@ -74,7 +74,7 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
     #
     tol = 1e-5
     max_iters=100
-    s_current =  s_center[peak_idx] - 1e-5 * s_center[peak_idx]
+    s_current =  s_center[peak_idx] - 1e-4 * s_center[peak_idx]
     logm_a = log(m_center[lower_idx]) #the lower bound on m_a 
     logm_b =log(m_center[upper_idx]) #the upper bound on m_b
     logm_lower = logm_a
@@ -106,7 +106,7 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
         delta_s =  residual / int_v2_dm
         s_current -= delta_s
         #and check for convergence
-        if abs(delta_s) < tol * abs(s_current)
+        if residual/int_s_v2_dm < tol
             
             idx_a = searchsortedfirst(m_center, exp(logm_a))
             idx_b = searchsortedlast(m_center, exp(logm_b))
