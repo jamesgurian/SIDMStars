@@ -1,5 +1,5 @@
-struct StructureParams
-    s::FunctionWrapper{Float64, Tuple{Float64}} 
+struct StructureParams{T}
+    s::T
     G::Float64
 end
 
@@ -32,7 +32,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     # Define Problem Template
     logM_inner, logM_outer = mspan[1], mspan[2]
     u0_in_template = [log_r_min, log_P_guess_in, 0.] 
-    prob_inner_tmpl = ODEProblem(hse_system!, u0_in_template, (logM_inner, logM_outer), params)
+    prob_inner_tmpl = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_in_template, (logM_inner, logM_outer), params)
     
     # Callback: Terminate if pressure hits surface target early
     condition(u, t, integrator) = u[2] < log_p_surf
@@ -40,7 +40,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     cb = DiscreteCallback(condition, affect!)
     
     # settings
-    tol = 1e-8
+    tol = 1e-10
     max_iter = 1000
 
     # Returns negative if Pc is too low, positive if Pc is too high
@@ -48,7 +48,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
         prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP, 0.])
         sol_in = solve(prob_in, callback=cb,reltol=1e-8)
         #if Integration completed (Reached M_outer)
-        if sol_in.t[end] >= logM_outer || isapprox(sol_in.t[end], logM_outer, atol=1e-4)
+        if sol_in.t[end] >= logM_outer
             return (sol_in(logM_outer)[2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
             
         else

@@ -17,5 +17,4 @@ dm_params = RunParams(
 )
 
 profile = setup_dk_profile(1e6, 7, 1, z=10)
-sol_init = initialize_profile(dm_params,profile, p_outer=0);
-sol = evolve(dm_params,profile,gridpoints=100,eps_diff=1., eps_kh=0.1, mass_min_frac=1e-4);
+evolve(dm_params,profile,gridpoints=100,eps_diff=1., eps_kh=0.1, mass_min_frac=1e-4);

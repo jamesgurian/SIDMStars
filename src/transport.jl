@@ -1,5 +1,6 @@
-#f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
-f_k5(v_over_w,n) = (1/6) * (sqrt(2)*v_over_w)^n * gamma(n/2 + 4) 
+f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
+
+#f_k5(v_over_w,n) = (1/6) * (sqrt(2)*v_over_w)^n * gamma(n/2 + 4) 
 
 
 function Kinv_smfp(v2, dm_params) 
