@@ -76,9 +76,7 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
     m_span = (log_m[end], log_m[1])
 
     prob= ODEProblem(evaporation_integral!,u0, m_span)
-
     for i in eachindex(v_vals)
-
         pars = EvaporationParams(x->sol(x)[2], x->sol(x)[1], dPhi, s, run_params, G, v_vals[i]^2)
         prob= remake(prob, p=pars)
         sol_tau = solve(prob, callback = cb_τ, abstol = 1e-3, reltol = 1e-3)

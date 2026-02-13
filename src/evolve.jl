@@ -79,15 +79,14 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     function explicit_dsdt_conduction!(dsdt_conduct, s_interp, s_center, log_P_guess)
         ode_params = StructureParams(s_interp, G)
         sol = shoot_1p((log(M_min), log(M_tot)), log_P_guess, log(r_min), log(p_surf), ode_params)
-        m_face .= M_min .+ (M_tot - M_min) .* x
-        m_center .= 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
+        #m_face .= M_min .+ (M_tot - M_min) .* x
+        #m_center .= 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
 
-        logm_face .= log.(m_face)
     
         #logm_face .= (range(log(M_min), stop = log(M_tot), length=gridpoints))
         #m_face .= exp.(logm_face)
         #m_center .= sqrt.(m_face[1:end-1] .* m_face[2:end])
-        logm_center .= log.(m_center)
+        #logm_center .= log.(m_center)
 
         P_center .= exp.(sol(logm_center)[2,:]) 
 
@@ -140,23 +139,46 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             logP_core_old = logP_core
             #we need a monotonicity preserving interpolant for convection...
             s_interp = PCHIPInterpolation(s_center, log.(m_center),extrapolation = ExtrapolationType.Linear)
+
             sol, logP_core, ρ_core, dt_diffusion = explicit_dsdt_conduction!(dsdt_conduct, s_interp, s_center, logP_guess)
             s_center .+= dt_diffusion .* (dsdt_conduct .+ dsdt_evap)  
             m_center .+= mdot_cum .* dt_diffusion
             M_tot += mdot_cum[end] .* dt_diffusion
+            m_face[2:end-1] .= 0.5(m_center[2:end] .+ m_center[1:end-1])
+            m_face[end] = M_tot
+            logm_face .= log.(m_face)  
+            logm_center .= log.(m_center)          
             t += dt_diffusion
             t_sub += dt_diffusion
 
             
         end
+        dt_kh = eps_kh *  minimum((abs.(1 ./ (dsdt_evap .+ dsdt_conduct))))
+
         convect!(s_interp, s_center, v2_center, m_center)
 
+        
+        logm_of_s = PCHIPInterpolation(logm_center, s_center)
+        s_range = collect(range(s_center[1], stop = s_center[end], length=gridpoints-1))
+        logm_center = logm_of_s(s_range)
+        m_center .= exp.(logm_center)
+        m_face[2:end-1] .= 0.5(m_center[2:end] .+ m_center[1:end-1])
+        logm_face .= log.(m_face)
+
+        s_center = s_range
+        s_interp = PCHIPInterpolation(s_center, logm_center, extrapolation =  ExtrapolationType.Linear)
+        P_center .= exp.(sol(logm_center)[2,:]) 
+      ##  println("r", r_face[end])
+     #   println("m", M_tot)
+        # Calculate derived center variables
+        ρ_center  .= P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
+        v2_center .= P_center ./ ρ_center
+       
         v2_esc_surface = 2 * (G * M_tot)/r_face[end] #neglecting the mass exterior to the integration region
         v2_esc_core =  2 * sol[end][3]
         vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt(2*v2_esc_core)),length=velocity_bins))
         dsdt_evap, mdot_cum = calc_evaporation(run_params, G, sol, s_interp, m_face, m_center, v2_center, vrange)
         t_sub = 0.
-        dt_kh = eps_kh *  minimum((abs.(1 ./ (dsdt_evap .+ dsdt_conduct))))
 
 
 
