@@ -24,12 +24,10 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     t=0.
     t_sub = 0.
     dt_kh = 0.
-    #m_face = collect(range((M_min), stop = (M_tot), length=gridpoints))
-    #x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1)
-    x = range(0, stop=1, length=gridpoints) .^ 2
+    x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1)
+    
     m_face = M_min .+ (M_tot - M_min) .* x
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
-   # m_center = sqrt.(m_face[1:end-1] .* m_face[2:end])
    
     logm_center = log.(m_center)
     logm_face = log.(m_face)
@@ -100,7 +98,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         #set r_min by assuming the mass-radius relationship is a power law and extrapolating
         slope = log(r_center[2]/r_center[1])/log(m_center[2]/m_center[1])
         r_min = r_center[1] * (M_min/m_center[1])^slope
-        dm_between_centers .= diff(m_center)
 
 
         dv2_dm_face = diff(v2_center) ./ dm_between_centers
@@ -146,6 +143,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             M_tot += mdot_cum[end] .* dt_diffusion
             m_face[2:end-1] .= 0.5(m_center[2:end] .+ m_center[1:end-1])
             m_face[end] = M_tot
+            dm_cell  .= diff(m_face)
+            dm_between_centers .= diff(m_center)
+
             logm_face .= log.(m_face)  
             logm_center .= log.(m_center)          
             t += dt_diffusion
@@ -157,19 +157,21 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
         convect!(s_interp, s_center, v2_center, m_center)
 
-        
-        logm_of_s = PCHIPInterpolation(logm_center, s_center)
+        #now we want a mass grid that's uniformly spaced in s
+       logm_of_s = PCHIPInterpolation(logm_center, s_center)
         s_range = collect(range(s_center[1], stop = s_center[end], length=gridpoints-1))
         logm_center = logm_of_s(s_range)
         m_center .= exp.(logm_center)
         m_face[2:end-1] .= 0.5(m_center[2:end] .+ m_center[1:end-1])
-        logm_face .= log.(m_face)
+        dm_cell  = diff(m_face)
+        dm_between_centers .= diff(m_center)
 
+        logm_face .= log.(m_face)
         s_center = s_range
+
+
         s_interp = PCHIPInterpolation(s_center, logm_center, extrapolation =  ExtrapolationType.Linear)
         P_center .= exp.(sol(logm_center)[2,:]) 
-      ##  println("r", r_face[end])
-     #   println("m", M_tot)
         # Calculate derived center variables
         ρ_center  .= P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
         v2_center .= P_center ./ ρ_center
@@ -179,7 +181,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt(2*v2_esc_core)),length=velocity_bins))
         dsdt_evap, mdot_cum = calc_evaporation(run_params, G, sol, s_interp, m_face, m_center, v2_center, vrange)
         t_sub = 0.
-
 
 
         if t - t_prev_snap > run_params.snap_interval_time || abs((ρ_core - ρ_core_prev) / ρ_core_prev) > run_params.snap_interval_density
