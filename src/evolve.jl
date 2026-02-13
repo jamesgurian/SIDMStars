@@ -98,6 +98,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         #set r_min by assuming the mass-radius relationship is a power law and extrapolating
         slope = log(r_center[2]/r_center[1])/log(m_center[2]/m_center[1])
         r_min = r_center[1] * (M_min/m_center[1])^slope
+        dm_between_centers .= diff(m_center)
 
 
         dv2_dm_face = diff(v2_center) ./ dm_between_centers
@@ -126,6 +127,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
     snap_idx=1
    while t < run_params.t_end
+   #for i in 1:6
     println("t:", t) 
         #The von Neumann Stability condition is very strict compared to the thermal timescale
         #and calculating the evaporation rate is relatively expensive
@@ -144,8 +146,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             m_face[2:end-1] .= 0.5(m_center[2:end] .+ m_center[1:end-1])
             m_face[end] = M_tot
             dm_cell  .= diff(m_face)
-            dm_between_centers .= diff(m_center)
-
             logm_face .= log.(m_face)  
             logm_center .= log.(m_center)          
             t += dt_diffusion
@@ -156,22 +156,31 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         dt_kh = eps_kh *  minimum((abs.(1 ./ (dsdt_evap .+ dsdt_conduct))))
 
         convect!(s_interp, s_center, v2_center, m_center)
-
-        #now we want a mass grid that's uniformly spaced in s
+        #semilogx(m_center, v2_center, "--")
+       # semilogx(m_face, L_face)
+        #semilogx(m_center, dsdt_conduct)
+        #ylim(-3,3)
        logm_of_s = PCHIPInterpolation(logm_center, s_center)
         s_range = collect(range(s_center[1], stop = s_center[end], length=gridpoints-1))
         logm_center = logm_of_s(s_range)
         m_center .= exp.(logm_center)
         m_face[2:end-1] .= 0.5(m_center[2:end] .+ m_center[1:end-1])
         dm_cell  = diff(m_face)
-        dm_between_centers .= diff(m_center)
 
         logm_face .= log.(m_face)
         s_center = s_range
+        #=m_face = M_min .+ (M_tot - M_min) .* x
+        m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
+        dm_cell = diff(m_face)
+        logm_center = log.(m_center)
+        logm_face = log.(m_face)
+        s_center = s_interp(logm_center)=#
 
 
         s_interp = PCHIPInterpolation(s_center, logm_center, extrapolation =  ExtrapolationType.Linear)
         P_center .= exp.(sol(logm_center)[2,:]) 
+      ##  println("r", r_face[end])
+     #   println("m", M_tot)
         # Calculate derived center variables
         ρ_center  .= P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
         v2_center .= P_center ./ ρ_center
