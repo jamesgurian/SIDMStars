@@ -212,7 +212,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
             
         end
-        dt_kh = eps_kh *  minimum((abs.(1 ./ (state.dsdt_evap .+ state.dsdt_conduct))))
+        #at this point, the conduction and evaporation rates are on different grids
+        #so we can't add them
+        dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
 
         convect!(s_interp, state.s_center, state.v2_center, state.m_center)
         s_interp = update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
