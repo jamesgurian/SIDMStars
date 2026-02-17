@@ -3,18 +3,21 @@ f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
 #f_k5(v_over_w,n) = (1/6) * (sqrt(2)*v_over_w)^n * gamma(n/2 + 4) 
 
 
-function Kinv_smfp(v2, dm_params) 
+function Kinv_smfp(v2, run_params) 
     b = 25 * sqrt(pi)/32 #smfp coefficient
-    4 * pi * dm_params.σ0 * f_k5(sqrt(v2)/dm_params.w, dm_params.n)/(b * sqrt(v2)) 
+    4 * pi * run_params.σ0 * f_k5(sqrt(v2)/run_params.w, run_params.n)/(b * sqrt(v2)) 
 end
 
-function Kinv_lmfp(v2, ρ, dm_params,G)
+function Kinv_lmfp(v2, ρ, run_params,G)
     a = 4/sqrt(pi)
-    4 * pi * G / ( a * dm_params.C * ρ * sqrt(v2)^3 * dm_params.σ0 * f_k5(sqrt(v2)/dm_params.w,dm_params.n))
+    4 * pi * G / ( a * run_params.C * ρ * sqrt(v2)^3 * run_params.σ0 * f_k5(sqrt(v2)/run_params.w,run_params.n))
 end
 
-function K_eff(v2,ρ, dm_params)
-    1/(Kinv_smfp(v2, dm_params) + Kinv_lmfp(v2, ρ, dm_params, G))
+function calc_κ(P, s, run_params, G)
+    ρ = P^(3/5) * exp(-2s/5)
+    v2 = P/ρ
+    k_tot = 1 / (Kinv_smfp(v2, run_params) + Kinv_lmfp(v2, ρ, run_params, G))
+    return k_tot
 end
 
 struct EvaporationParams
