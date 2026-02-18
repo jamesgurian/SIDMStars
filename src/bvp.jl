@@ -27,7 +27,7 @@ function hse_system_rho!(du,u,p,m)
     du[2] = - p.G * m /(4 * pi * r^4)
 end
 
-function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
+function shoot_1p(mspan, log_P_guess_in, log_r_min, log_lastm, log_p_surf, params)
 
     # Define Problem Template
     logM_inner, logM_outer = mspan[1], mspan[2]
@@ -49,7 +49,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
         sol_in = solve(prob_in, callback=cb,reltol=1e-8)
         #if Integration completed (Reached M_outer)
         if sol_in.t[end] >= logM_outer
-            return (sol_in(logM_outer)[2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
+            return (sol_in(log_lastm)[2] - log_p_surf)/(abs(log_p_surf)) # Positive Residual (Too much pressure left)
             
         else
             # Negative Residual (Ran out of pressure too early)

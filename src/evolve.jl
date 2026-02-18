@@ -68,9 +68,11 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints)
     
     #we want to construct a grid which has resolution where log(r) or s are varying rapidly
     r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
+    invP = 1 ./ state.P_center
+    invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
     s_norm = (state.s_center .- state.s_center[1]) ./ (state.s_center[end] - state.s_center[1])
         
-    Q_center = 0.5 .* r_norm .+ 0.5 .* s_norm 
+    Q_center = (1/3) .* (r_norm .+ s_norm .+ invP_norm)
     #so we interpolate in normalized logr and s to get our new mass grid
     logm_of_Q = PCHIPInterpolation(state.logm_center, Q_center)
     Q_range = collect(range(Q_center[1], stop = Q_center[end], length=gridpoints-1))
@@ -98,15 +100,15 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints)
     state.v2_center .= state.P_center ./ state.ρ_center
     
     s_interp = PCHIPInterpolation(state.s_center, state.logm_center, extrapolation = ExtrapolationType.Linear)
-
-    return s_interp
+    #P_surf = exp(sol(state.logm_center[end])[2])
+    return s_interp#, P_surf
 end
 
 function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params)
     r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
     
     ode_params = StructureParams(s_interp, G)
-    sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), log(p_surf), ode_params)
+    sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), state.logm_center[end], log(p_surf), ode_params)
    
     state.P_center .= exp.(sol(state.logm_center)[2,:]) 
 
@@ -157,13 +159,12 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     G = ustrip(uconvert(u"kpc*km^2/s^2/Msun", Constants.G))
 
     M_tot -= 1e-4*M_tot #bvp has a hard time with the true zero pressure BC, because we log transform P
-    p_surf = sol(M_tot)[2]
     
 
     
     #initialize the mechanical and thermodynamic state
     state = initialize_grid(sol, s, M_min, M_tot, gridpoints)
-
+    p_surf = sol(state.m_center[end])[2]
     logP_core = log(sol(M_min)[2])
     logP_core_old = logP_core
 
@@ -217,7 +218,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
 
         convect!(s_interp, state.s_center, state.v2_center, state.m_center)
-        s_interp = update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
+        s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
         v2_esc_surface = 2 * (G * M_tot) / state.r_face[end] # neglecting the mass exterior to the integration region
         v2_esc_core = 2 * sol[end][3]
         vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt(2*v2_esc_core)),length=velocity_bins))
