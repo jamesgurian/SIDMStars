@@ -23,7 +23,9 @@ using PyPlot
 using Roots
 using PrecompileTools
 using NumericalIntegration
+using NonlinearSolve
 
+using RecursiveArrayTools
 include("bvp.jl")
 include("common.jl")
 include("transport.jl")

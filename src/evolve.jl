@@ -106,10 +106,11 @@ end
 
 function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params)
     r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
-    
+    log_rmax = log(state.r_face[end])
     ode_params = StructureParams(s_interp, G)
     sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), state.logm_center[end], log(p_surf), ode_params)
-   
+    
+    #sol = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), ode_params)
     state.P_center .= exp.(sol(state.logm_center)[2,:]) 
 
     # Calculate derived center variables
@@ -216,7 +217,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         #at this point, the conduction and evaporation rates are on different grids
         #so we can't add them
         dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
-
         convect!(s_interp, state.s_center, state.v2_center, state.m_center)
         s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
         v2_esc_surface = 2 * (G * M_tot) / state.r_face[end] # neglecting the mass exterior to the integration region
@@ -227,7 +227,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         state.mdot_cum .= mdot_cum_new
 
         t_sub = 0.
-
 
         if t - t_prev_snap > run_params.snap_interval_time || abs((ρ_core - ρ_core_prev) / ρ_core_prev) > run_params.snap_interval_density
             ρ_core_prev = ρ_core

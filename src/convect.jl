@@ -107,7 +107,7 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
         s_current -= delta_s
         #and check for convergence
         if residual/int_s_v2_dm < tol
-            println("conv")
+            println("convection")
             idx_a = searchsortedfirst(m_center, exp(logm_a))
             idx_b = searchsortedlast(m_center, exp(logm_b))
             
