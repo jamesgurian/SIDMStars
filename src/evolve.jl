@@ -72,7 +72,7 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints)
     invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
     s_norm = (state.s_center .- state.s_center[1]) ./ (state.s_center[end] - state.s_center[1])
         
-    Q_center = (1/3) .* (r_norm .+ s_norm .+ invP_norm)
+    Q_center = (0.45) .* (r_norm .+ s_norm  ) .+ 0.1 .* invP_norm
     #so we interpolate in normalized logr and s to get our new mass grid
     logm_of_Q = PCHIPInterpolation(state.logm_center, Q_center)
     Q_range = collect(range(Q_center[1], stop = Q_center[end], length=gridpoints-1))
@@ -104,13 +104,14 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints)
     return s_interp#, P_surf
 end
 
-function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params)
+function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params)
     r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
-    log_rmax = log(state.r_face[end])
     ode_params = StructureParams(s_interp, G)
-    sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), state.logm_center[end], log(p_surf), ode_params)
-    
-    #sol = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), ode_params)
+    #sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), log(p_surf), ode_params)
+            log_rmax = log(state.r_face[end])
+    fit_idx = searchsortedlast(state.P_center, sqrt(state.P_center[1]),rev=true)
+    logM_fit = log(state.m_center[fit_idx])
+    sol = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), logM_fit, ode_params)
     state.P_center .= exp.(sol(state.logm_center)[2,:]) 
 
     # Calculate derived center variables
@@ -165,7 +166,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     
     #initialize the mechanical and thermodynamic state
     state = initialize_grid(sol, s, M_min, M_tot, gridpoints)
-    p_surf = sol(state.m_center[end])[2]
+    p_surf = sol(M_tot)[2]
     logP_core = log(sol(M_min)[2])
     logP_core_old = logP_core
 
@@ -173,6 +174,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     ρ_core_prev = ρ_core
     init_hdf5(run_params.snap_loc, gridpoints-1)
 
+    logM_fit = 0.5(log(M_tot) + log(M_min))
     t=0.
     t_sub = 0.
     dt_kh = 0.
@@ -185,7 +187,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     snap_idx=1
     s_interp = nothing
     while t < run_params.t_end
-        println("t:", t) 
+    println("t:", t) 
         #The von Neumann Stability condition is very strict compared to the thermal timescale
         #and calculating the evaporation rate is relatively expensive
         #so we subscycle
@@ -198,8 +200,12 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             s_interp = PCHIPInterpolation(state.s_center, state.logm_center,extrapolation = ExtrapolationType.Linear)
 
             sol, logP_core, ρ_core, dt_diffusion = explicit_dsdt_conduction!(
-                state, s_interp, logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params
-            )            
+                state, s_interp, logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params
+            )    
+            grads = [sol(t, Val{1})[1] for t in sol.t]
+            #println(grads)
+            idx = searchsortedfirst(grads, 10)
+            logM_fit = sol.t[idx]
             state.s_center .+= dt_diffusion .* (state.dsdt_conduct .+ state.dsdt_evap)  
             state.m_center .+= state.mdot_cum .* dt_diffusion
             M_tot += state.mdot_cum[end] .* dt_diffusion
@@ -216,6 +222,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         end
         #at this point, the conduction and evaporation rates are on different grids
         #so we can't add them
+        #semilogy(sol.t, exp.(sol.u[2,:]))
+         #       scatter(sol.t, exp.(sol.u[2,:]),s=1)
+            
         dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
         convect!(s_interp, state.s_center, state.v2_center, state.m_center)
         s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
@@ -225,12 +234,12 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         dsdt_evap_new, mdot_cum_new = calc_evaporation(run_params, G, sol, s_interp, state.m_face, state.m_center, state.v2_center, vrange)
         state.dsdt_evap .= dsdt_evap_new
         state.mdot_cum .= mdot_cum_new
-
         t_sub = 0.
 
         if t - t_prev_snap > run_params.snap_interval_time || abs((ρ_core - ρ_core_prev) / ρ_core_prev) > run_params.snap_interval_density
             ρ_core_prev = ρ_core
-
+           # plot(sol.t, sol.u[2,:])
+           # vlines(sol.t_fit, 5,50)
             println("writing snapshot $snap_idx")
             write_snapshot!(run_params.snap_loc, snap_idx, t, state.P_center, state.r_center, state.m_center,  state.ρ_center, state.s_center)
             snap_idx += 1;

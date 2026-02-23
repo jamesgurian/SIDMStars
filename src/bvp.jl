@@ -27,7 +27,7 @@ function hse_system_rho!(du,u,p,m)
     du[2] = - p.G * m /(4 * pi * r^4)
 end
 
-function shoot_1p(mspan, log_P_guess_in, log_r_min, log_lastm, log_p_surf, params)
+function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
 
     # Define Problem Template
     logM_inner, logM_outer = mspan[1], mspan[2]
@@ -41,15 +41,15 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_lastm, log_p_surf, param
     
     # settings
     tol = 1e-2
-    max_iter = 50
+    max_iter = 100
 
     # Returns negative if Pc is too low, positive if Pc is too high
     function get_residual(current_logP)
         prob_in = remake(prob_inner_tmpl, u0=[log_r_min, current_logP, 0.])
-        sol_in = solve(prob_in, callback=cb,reltol=1e-12)
+        sol_in = solve(prob_in, callback=cb,reltol=1e-8)
         #if Integration reached last grid point
-        if sol_in.t[end] >= log_lastm
-            return (sol_in(log_lastm)[2] - log_p_surf) 
+        if sol_in.t[end] >= mspan[2]
+            return (sol_in(logM_outer)[2] - log_p_surf) 
             
         else
             
@@ -104,7 +104,7 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_lastm, log_p_surf, param
     end
     
     final_prob = remake(prob_inner_tmpl, u0=[log_r_min, p_mid, 0.])
-    sol = solve(final_prob,callback=cb,reltol=1e-12)
+    sol = solve(final_prob,callback=cb,reltol=1e-8)
     return sol
 end
 
@@ -112,6 +112,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     # 1. Setup the Problem Domains
     logM_inner = mspan[1]
     logM_outer = mspan[2]
+    
     # Outward domain: Center to Fitting Mass
     span_out = (logM_inner, logM_fit)
     span_in  = (logM_outer, logM_fit)
@@ -124,13 +125,13 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
         # --- OUTWARD INTEGRATION ---
         u0_out = [log_r_min, curr_log_P_c, 0.0] 
         prob_out = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_out, span_out, params)
-        sol_out = solve(prob_out, reltol=1e-12)
+        sol_out = solve(prob_out, reltol=1e-12,abstol=1e-8,save_everystep = false)
 
         # --- INWARD INTEGRATION ---
         # Note: adjust the 3rd element of u0_in if your surface BC for that variable isn't 0.0
         u0_in = [curr_log_R_surf, log_p_surf, 0.0] 
         prob_in = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_in, span_in, params)
-        sol_in = solve(prob_in, reltol=1e-12)
+        sol_in = solve(prob_in, reltol=1e-12,abstol=1e-8,save_everystep = false)
 
         
             
@@ -140,13 +141,13 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
 
     # 3. Setup and Solve the Nonlinear Problem
     u0_guess = [log_P_guess_in, log_R_guess_out]
-    nl_prob = NonlinearProblem(get_residuals!, u0_guess, nothing)
+    nf = NonlinearFunction{true, SciMLBase.FullSpecialize}(get_residuals!)
+    nl_prob = NonlinearProblem(nf, u0_guess, nothing)
     
-    # TrustRegion is much safer for stiff ODE boundary values than NewtonRaphson
-    nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=500)
+    nl_sol = solve(nl_prob, SimpleTrustRegion(), abstol=1e-2, maxiters=1000)
 
     if !SciMLBase.successful_retcode(nl_sol.retcode)
-        @warn "Shooting did not fully converge. Retcode: $(nl_sol.retcode). Final Residual norm: $(norm(nl_sol.resid))"
+        @warn "Shooting did not converge. Retcode: $(nl_sol.retcode). Final Residual norm: $(norm(nl_sol.resid))"
     end
 
     # 4. Generate the Final Converged Profiles
@@ -154,11 +155,9 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
 
 
     final_prob_out = ODEProblem(hse_system!, [log_r_min, best_log_P_c, 0.0], span_out, params)
-    final_sol_out = solve(final_prob_out, reltol=1e-12)    
+    final_sol_out = solve(final_prob_out, reltol=1e-12,abstol=1e-8)    
     final_prob_in = ODEProblem(hse_system!, [best_log_R_surf, log_p_surf, 0.0], span_in, params)
-    final_sol_in = solve(final_prob_in, reltol=1e-12)
-
-
+    final_sol_in = solve(final_prob_in, reltol=1e-12,abstol=1e-8)
     # Package and return
     return CompositeODESolution(final_sol_out, final_sol_in)
 end

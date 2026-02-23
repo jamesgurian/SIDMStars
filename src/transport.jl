@@ -20,13 +20,11 @@ function calc_κ(P, s, run_params, G)
     return k_tot
 end
 
-struct EvaporationParams
-    # Interpolations for background structure: Input is logm, Output is Float64
-    logP::FunctionWrapper{Float64, Tuple{Float64}} 
-    logr::FunctionWrapper{Float64, Tuple{Float64}} 
-    dPhi::FunctionWrapper{Float64, Tuple{Float64}} 
-    # Entropy profile: Input is logr, Output is Float64
-    s::FunctionWrapper{Float64, Tuple{Float64}}   
+struct EvaporationParams{T,U,V,W}
+    logP::T 
+    logr::U
+    dPhi::V
+    s::W
 
     # Nested parameters and constants
     run_params::RunParams
@@ -78,11 +76,13 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
     u0 = [ 0., 0., 0.]
     m_span = (log_m[end], log_m[1])
 
-    prob= ODEProblem(evaporation_integral!,u0, m_span)
+    prob= ODEProblem{true, SciMLBase.FullSpecialize}(evaporation_integral!,u0, m_span)
     for i in eachindex(v_vals)
         pars = EvaporationParams(x->sol(x)[2], x->sol(x)[1], dPhi, s, run_params, G, v_vals[i]^2)
         prob= remake(prob, p=pars)
-        sol_tau = solve(prob, callback = cb_τ, abstol = 1e-3, reltol = 1e-3)
+        sol_tau = solve(prob, callback = cb_τ, abstol = 1e-3, reltol = 1e-3, saveat=(log_m[1:end-1]))
+        
+      
         for j in 1:(length(m_face)-1)
             if log_m[j] < sol_tau.t[end] #if it's after we terminated (high tau)
                 udot_cell[j,i] = 0.

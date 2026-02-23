@@ -26,8 +26,9 @@ using NumericalIntegration
 using NonlinearSolve
 
 using RecursiveArrayTools
-include("bvp.jl")
 include("common.jl")
+
+include("bvp.jl")
 include("transport.jl")
 include("util.jl")
 include("init.jl")

@@ -16,7 +16,7 @@ dm_params = RunParams(
     r_min = 1e-3, #kpc
     snap_interval_time = 0.1,
     snap_interval_density = 0.1,
-    snap_loc="dk_out_s2.hdf5"
+    snap_loc="dk_out.hdf5"
 )
 
 profile = setup_dk_profile(1e6, 7, 1, z=10)

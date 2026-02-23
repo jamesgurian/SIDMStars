@@ -26,7 +26,6 @@ function CompositeODESolution(sol_out, sol_in; t_fit = sol_out.t[end])
     u_out_fit = sol_out(t_fit)
     u_in_fit  = sol_in(t_fit)
     shift = u_out_fit[3] - u_in_fit[3]
-
     u_in_shifted = map(sol_in.u) do u
         u_new = copy(u)
         u_new[3] += shift
@@ -54,12 +53,29 @@ function (csol::CompositeODESolution)(t::Number)
         return [u_val[1], u_val[2], u_val[3] + csol.potential_shift]
     end
 end
+
 function (csol::CompositeODESolution)(t_vec::AbstractArray)
     u_evaluated = [csol(t) for t in t_vec]
-    
     return DiffEqArray(u_evaluated, t_vec)
 end
-(csol::CompositeODESolution)(t::AbstractArray) = [csol(t_val) for t_val in t]
+
+# 1. Scalar time input for derivatives
+function (csol::CompositeODESolution)(t::Number, ::Type{Val{N}}) where N
+    if t <= csol.t_fit
+        return csol.sol_out(t, Val{N})
+    else
+        return csol.sol_in(t, Val{N})
+    end
+end
+
+# 2. Vector time input for derivatives
+function (csol::CompositeODESolution)(t_vec::AbstractArray, ::Type{Val{N}}) where N
+    # Evaluate the derivative interpolant at each time point
+    u_evaluated = [csol(t, Val{N}) for t in t_vec]
+    
+    # Wrap in DiffEqArray so the derivative output also supports matrix slicing
+    return DiffEqArray(u_evaluated, t_vec)
+end
 
 Base.getindex(csol::CompositeODESolution, i, j) = csol.u[i, j]
 Base.getindex(csol::CompositeODESolution, i) = csol.u[i]
