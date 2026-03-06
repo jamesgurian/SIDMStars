@@ -109,15 +109,13 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
 end
 
 function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, logM_fit, params)
-    # 1. Setup the Problem Domains
     logM_inner = mspan[1]
     logM_outer = mspan[2]
     
-    # Outward domain: Center to Fitting Mass
     span_out = (logM_inner, logM_fit)
     span_in  = (logM_outer, logM_fit)
 
-    # 2. Define the Residual Function for NonlinearSolve
+    # Define the Residual Function for NonlinearSolve
     function get_residuals!(resid, u, p)
         curr_log_P_c    = u[1]
         curr_log_R_surf = u[2]
@@ -125,13 +123,12 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
         # --- OUTWARD INTEGRATION ---
         u0_out = [log_r_min, curr_log_P_c, 0.0] 
         prob_out = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_out, span_out, params)
-        sol_out = solve(prob_out, reltol=1e-12,abstol=1e-8,save_everystep = false)
+        sol_out = solve(prob_out, reltol=1e-12,abstol=1e-10,save_everystep = false)
 
         # --- INWARD INTEGRATION ---
-        # Note: adjust the 3rd element of u0_in if your surface BC for that variable isn't 0.0
         u0_in = [curr_log_R_surf, log_p_surf, 0.0] 
         prob_in = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_in, span_in, params)
-        sol_in = solve(prob_in, reltol=1e-12,abstol=1e-8,save_everystep = false)
+        sol_in = solve(prob_in, reltol=1e-12,abstol=1e-10,save_everystep = false)
 
         
             
@@ -139,18 +136,18 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
         resid[2] =  sol_out.u[end][2] - sol_in.u[end][2]
     end
 
-    # 3. Setup and Solve the Nonlinear Problem
+    # Setup and Solve the Nonlinear Problem
     u0_guess = [log_P_guess_in, log_R_guess_out]
     nf = NonlinearFunction{true, SciMLBase.FullSpecialize}(get_residuals!)
     nl_prob = NonlinearProblem(nf, u0_guess, nothing)
     
-    nl_sol = solve(nl_prob, SimpleTrustRegion(), abstol=1e-2, maxiters=1000)
+    nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
 
     if !SciMLBase.successful_retcode(nl_sol.retcode)
         @warn "Shooting did not converge. Retcode: $(nl_sol.retcode). Final Residual norm: $(norm(nl_sol.resid))"
     end
 
-    # 4. Generate the Final Converged Profiles
+    # Generate the Final Converged Profiles
     best_log_P_c, best_log_R_surf = nl_sol.u
 
 

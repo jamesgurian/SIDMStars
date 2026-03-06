@@ -1,7 +1,7 @@
 
 
 
-#=
+
 dm_params = RunParams(
     C = 1.0,
     σ0 = 1.04e-6, #kpc^2/M_sun
@@ -17,4 +17,3 @@ dm_params = RunParams(
 
 profile = setup_dk_profile(1e6, 7, 1, z=10)
 evolve(dm_params,profile,gridpoints=200,eps_diff=1., eps_kh=0.1, mass_min_frac=1e-4);
-=#

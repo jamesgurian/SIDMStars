@@ -104,7 +104,7 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints)
     return s_interp#, P_surf
 end
 
-function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params)
+function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params)
     r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
     ode_params = StructureParams(s_interp, G)
     #sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), log(p_surf), ode_params)
@@ -200,12 +200,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             s_interp = PCHIPInterpolation(state.s_center, state.logm_center,extrapolation = ExtrapolationType.Linear)
 
             sol, logP_core, ρ_core, dt_diffusion = explicit_dsdt_conduction!(
-                state, s_interp, logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params
+                state, s_interp, logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params
             )    
-            grads = [sol(t, Val{1})[1] for t in sol.t]
-            #println(grads)
-            idx = searchsortedfirst(grads, 10)
-            logM_fit = sol.t[idx]
+            
             state.s_center .+= dt_diffusion .* (state.dsdt_conduct .+ state.dsdt_evap)  
             state.m_center .+= state.mdot_cum .* dt_diffusion
             M_tot += state.mdot_cum[end] .* dt_diffusion
@@ -222,9 +219,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         end
         #at this point, the conduction and evaporation rates are on different grids
         #so we can't add them
-        #semilogy(sol.t, exp.(sol.u[2,:]))
-         #       scatter(sol.t, exp.(sol.u[2,:]),s=1)
-            
+       
         dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
         convect!(s_interp, state.s_center, state.v2_center, state.m_center)
         s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
@@ -238,8 +233,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
         if t - t_prev_snap > run_params.snap_interval_time || abs((ρ_core - ρ_core_prev) / ρ_core_prev) > run_params.snap_interval_density
             ρ_core_prev = ρ_core
-           # plot(sol.t, sol.u[2,:])
-           # vlines(sol.t_fit, 5,50)
             println("writing snapshot $snap_idx")
             write_snapshot!(run_params.snap_loc, snap_idx, t, state.P_center, state.r_center, state.m_center,  state.ρ_center, state.s_center)
             snap_idx += 1;
