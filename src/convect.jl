@@ -1,9 +1,11 @@
 function convect!(s_interp, s_center, v2_center,  m_center)
     #while there is a negative entropy gradient
+
     diff(s_center)
     while !issorted(s_center)
         #find the first region 
-        
+        println("convection")
+
         lower_idx, peak_idx, valley_idx, upper_idx = find_convective_zone(s_center)
         adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, peak_idx, valley_idx, upper_idx)
     end
@@ -107,7 +109,6 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
         s_current -= delta_s
         #and check for convergence
         if residual/int_s_v2_dm < tol
-            println("convection")
             idx_a = searchsortedfirst(m_center, exp(logm_a))
             idx_b = searchsortedlast(m_center, exp(logm_b))
             

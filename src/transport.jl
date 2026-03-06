@@ -1,6 +1,5 @@
 f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
 
-#f_k5(v_over_w,n) = (1/6) * (sqrt(2)*v_over_w)^n * gamma(n/2 + 4) 
 
 
 function Kinv_smfp(v2, run_params) 
@@ -25,8 +24,6 @@ struct EvaporationParams{T,U,V,W}
     logr::U
     dPhi::V
     s::W
-
-    # Nested parameters and constants
     run_params::RunParams
     G::Float64
     v2_i::Float64
@@ -44,16 +41,17 @@ function evaporation_integral!(du, u, p, logm)
     m = exp(logm)
     ρ = P^(3/5) *exp(-2p.s(logm)/5)
     v2_local = P/ρ
-    v2_rel = v2_part + v2_local
+    v2_rel = v2_part + 3*v2_local
     dr_dlogm = m/(4 * pi * r^2 * ρ)
     sigma = p.run_params.σ0 * (sqrt(v2_rel) / p.run_params.w)^p.run_params.n
     du[1] = -sigma * ρ * dr_dlogm
     shared_integrand = pi * r^2 * ρ *  du[1] *exp(-τ) 
 
-    # \dot E(v) = \int  4 pi r^2 \rho v  (0.5 v^2) e^-(\tau) d\tau/dlogm dlogm
-    du[2] =    2 * v2_part^(3/2) * shared_integrand
-    #\dot m = \int 4 pi r^2 \rho v e^(-\tau) d\tau/dlogm dlogm
-    du[3] =  4 * sqrt(v2_part) * shared_integrand 
+    # \dot E(v) = \int  4 *(1/4) pi r^2 \rho v  (0.5 v^2) e^-(\tau) d\tau/dlogm dlogm/2 
+    #flux is 1/4 n v 
+    du[2] =    0.5 * v2_part^(3/2) * shared_integrand
+    #\dot m = \int 0.5 pi r^2 \rho v e^(-\tau) d\tau/dlogm dlogm/2
+    du[3] =  sqrt(v2_part) * shared_integrand 
 end
 
 condition_τ(u,t, integrator) =  integrator.u[1] > 10
@@ -96,8 +94,10 @@ function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
             end
         end
         v_array[:, i] .= sqrt.(v_vals[i]^2 .+ 2 .* dPhi.(log_m_center))
-
     end
+
+ 
+
     dv = diff(v_array, dims=2)
     v_integrand_u = maxwellian.(v2s, v_array) .* udot_cell
     v_integrand_u_centered = sqrt.(v_integrand_u[:, 1:end-1] .* v_integrand_u[:, 2:end])

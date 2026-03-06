@@ -108,13 +108,12 @@ function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
     return sol
 end
 
-function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, logM_fit, params)
+function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, logM_fit, params, abstol, reltol)
     logM_inner = mspan[1]
     logM_outer = mspan[2]
     
     span_out = (logM_inner, logM_fit)
     span_in  = (logM_outer, logM_fit)
-
     # Define the Residual Function for NonlinearSolve
     function get_residuals!(resid, u, p)
         curr_log_P_c    = u[1]
@@ -123,12 +122,12 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
         # --- OUTWARD INTEGRATION ---
         u0_out = [log_r_min, curr_log_P_c, 0.0] 
         prob_out = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_out, span_out, params)
-        sol_out = solve(prob_out, reltol=1e-12,abstol=1e-10,save_everystep = false)
+        sol_out = solve(prob_out, reltol=reltol,abstol=abstol,save_everystep = false)
 
         # --- INWARD INTEGRATION ---
         u0_in = [curr_log_R_surf, log_p_surf, 0.0] 
         prob_in = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_in, span_in, params)
-        sol_in = solve(prob_in, reltol=1e-12,abstol=1e-10,save_everystep = false)
+        sol_in = solve(prob_in, reltol=reltol,abstol=abstol,save_everystep = false)
 
         
             
@@ -143,18 +142,25 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     
     nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
 
+    while !SciMLBase.successful_retcode(nl_sol.retcode) && abstol > 1e-13
+        abstol /= 10.
+        reltol /= 10.
+        nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
+
+        println("Reducing ODE solve tolerance")
+    end
+
     if !SciMLBase.successful_retcode(nl_sol.retcode)
         @warn "Shooting did not converge. Retcode: $(nl_sol.retcode). Final Residual norm: $(norm(nl_sol.resid))"
     end
-
     # Generate the Final Converged Profiles
     best_log_P_c, best_log_R_surf = nl_sol.u
 
 
     final_prob_out = ODEProblem(hse_system!, [log_r_min, best_log_P_c, 0.0], span_out, params)
-    final_sol_out = solve(final_prob_out, reltol=1e-12,abstol=1e-8)    
+    final_sol_out = solve(final_prob_out, reltol=reltol,abstol=abstol)    
     final_prob_in = ODEProblem(hse_system!, [best_log_R_surf, log_p_surf, 0.0], span_in, params)
-    final_sol_in = solve(final_prob_in, reltol=1e-12,abstol=1e-8)
+    final_sol_in = solve(final_prob_in, reltol=reltol,abstol=abstol)
     # Package and return
-    return CompositeODESolution(final_sol_out, final_sol_in)
+    return CompositeODESolution(final_sol_out, final_sol_in), abstol, reltol
 end

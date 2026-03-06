@@ -104,14 +104,15 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints)
     return s_interp#, P_surf
 end
 
-function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params)
+function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol)
     r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
     ode_params = StructureParams(s_interp, G)
     #sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), log(p_surf), ode_params)
-            log_rmax = log(state.r_face[end])
+    log_rmax = log(state.r_face[end])
+    
     fit_idx = searchsortedlast(state.P_center, sqrt(state.P_center[1]),rev=true)
     logM_fit = log(state.m_center[fit_idx])
-    sol = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), logM_fit, ode_params)
+    sol, abstol, reltol = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), logM_fit, ode_params, abstol, reltol)
     state.P_center .= exp.(sol(state.logm_center)[2,:]) 
 
     # Calculate derived center variables
@@ -130,7 +131,7 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
 
     state.ρ_face .= sqrt.(state.ρ_center[1:end-1] .* state.ρ_center[2:end])
     state.prefactor_face .= 16 * pi^2 .* state.r_face[2:end-1].^4 .* state.ρ_face .* state.κ_face
-    state.L_face[2:end-1] .= -state.prefactor_face .* dv2_dm_face
+    state.L_face[2:end-1] .= -state.prefactor_face .* dv2_dm_face *(3/2) #because K_{eff} is for u = 3/2 v^2
 
     state.dL_dm .= diff(state.L_face) ./ state.dm_cell
     state.dsdt_conduct .= -state.dL_dm ./ state.v2_center
@@ -148,11 +149,12 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     state.dt_diff_array .= state.dm_between_centers .^2 ./ state.prefactor_face
     dt_diffusion = eps_diff * minimum(state.dt_diff_array)
     
-    return sol, P_core, ρ_core, dt_diffusion
+    return sol, P_core, ρ_core, dt_diffusion, abstol, reltol
 end
 
 
-function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,gridpoints=50,velocity_bins=50)
+
+function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,gridpoints=50,velocity_bins=50, abstol=1e-5, reltol=1e-5)
     sol, s, M_tot = initialize_profile(run_params, rho_initial,p_outer=p_outer,mass_min_frac=mass_min_frac)
    
     
@@ -199,8 +201,8 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             #we need a monotonicity preserving interpolant for convection...
             s_interp = PCHIPInterpolation(state.s_center, state.logm_center,extrapolation = ExtrapolationType.Linear)
 
-            sol, logP_core, ρ_core, dt_diffusion = explicit_dsdt_conduction!(
-                state, s_interp, logP_guess, M_min, M_tot, p_surf, G, eps_diff, run_params
+            sol, logP_core, ρ_core, dt_diffusion, abstol, reltol = explicit_dsdt_conduction!(
+                state, s_interp, logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol
             )    
             
             state.s_center .+= dt_diffusion .* (state.dsdt_conduct .+ state.dsdt_evap)  
@@ -217,9 +219,10 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
             
         end
+
         #at this point, the conduction and evaporation rates are on different grids
         #so we can't add them
-       
+
         dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
         convect!(s_interp, state.s_center, state.v2_center, state.m_center)
         s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
@@ -237,6 +240,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             write_snapshot!(run_params.snap_loc, snap_idx, t, state.P_center, state.r_center, state.m_center,  state.ρ_center, state.s_center)
             snap_idx += 1;
             t_prev_snap = t
+           # loglog(state.m_center, 1 ./ abs.(state.dsdt_conduct))
+            #loglog(state.m_center,1 ./ abs.(state.dsdt_evap), "--")
+            #ylim(1e-5, 150)
         end
         
   
