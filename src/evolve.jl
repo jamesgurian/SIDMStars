@@ -112,7 +112,7 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     
     fit_idx = searchsortedlast(state.P_center, sqrt(state.P_center[1]),rev=true)
     logM_fit = log(state.m_center[fit_idx])
-    sol, abstol, reltol = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), logM_fit, ode_params, abstol, reltol)
+    sol, abstol, reltol, logM_fit = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), logM_fit, ode_params, abstol, reltol)
     state.P_center .= exp.(sol(state.logm_center)[2,:]) 
 
     # Calculate derived center variables
@@ -149,7 +149,7 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     state.dt_diff_array .= state.dm_between_centers .^2 ./ state.prefactor_face
     dt_diffusion = eps_diff * minimum(state.dt_diff_array)
     
-    return sol, P_core, ρ_core, dt_diffusion, abstol, reltol
+    return sol, P_core, ρ_core, dt_diffusion, abstol, reltol, logM_fit
 end
 
 
@@ -201,7 +201,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             #we need a monotonicity preserving interpolant for convection...
             s_interp = PCHIPInterpolation(state.s_center, state.logm_center,extrapolation = ExtrapolationType.Linear)
 
-            sol, logP_core, ρ_core, dt_diffusion, abstol, reltol = explicit_dsdt_conduction!(
+            sol, logP_core, ρ_core, dt_diffusion, abstol, reltol, logM_fit = explicit_dsdt_conduction!(
                 state, s_interp, logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol
             )    
             

@@ -114,6 +114,8 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     
     span_out = (logM_inner, logM_fit)
     span_in  = (logM_outer, logM_fit)
+    prob_out = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, (0., 0., 0.), span_out, params)
+        prob_in = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, (0., 0., 0.), span_in, params)
     # Define the Residual Function for NonlinearSolve
     function get_residuals!(resid, u, p)
         curr_log_P_c    = u[1]
@@ -121,12 +123,12 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
 
         # --- OUTWARD INTEGRATION ---
         u0_out = [log_r_min, curr_log_P_c, 0.0] 
-        prob_out = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_out, span_out, params)
+        prob_out = remake(prob_out, u0=u0_out)
         sol_out = solve(prob_out, reltol=reltol,abstol=abstol,save_everystep = false)
 
         # --- INWARD INTEGRATION ---
         u0_in = [curr_log_R_surf, log_p_surf, 0.0] 
-        prob_in = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, u0_in, span_in, params)
+        prob_in = remake(prob_in, u0=u0_in)
         sol_in = solve(prob_in, reltol=reltol,abstol=abstol,save_everystep = false)
 
         
@@ -142,12 +144,49 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     
     nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
 
-    while !SciMLBase.successful_retcode(nl_sol.retcode) && abstol > 1e-13
-        abstol /= 10.
-        reltol /= 10.
-        nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
+    while !SciMLBase.successful_retcode(nl_sol.retcode) && abstol >= 1e-13
+        best_log_P_c, best_log_R_surf = nl_sol.u
 
-        println("Reducing ODE solve tolerance")
+        prob_in = remake(prob_in, u0=[log_r_min, best_log_P_c, 0.0])
+        sol_in = solve(prob_in, reltol=reltol,abstol=abstol,save_everystep = false)
+        
+        
+        prob_out = remake(prob_out, u0 = [best_log_R_surf, log_p_surf, 0.0])
+        sol_out = solve(prob_out, reltol=reltol,abstol=abstol,save_everystep = false)
+        if sol_in.t[end] != sol_out.t[end]
+            println("Integrations did not meet, adjusting fitting point")
+            println("Outward terminated at ", exp(sol_out.t[end]))
+            println("Inward terminated at ", exp(sol_in.t[end]))
+
+            if sol_in.t[end] != logM_fit &&  sol_out.t[end] == logM_fit
+                println("Inward integration failed")
+                logM_fit = sol_in.t[end]
+            elseif sol_out.t[end] != logM_fit && sol_in.t[end] == logM_fit
+                println("Outward integration failed")
+
+                logM_fit = sol_out.t[end]
+            else
+                println("Both integrations failed. Good luck!")
+                logM_fit = sol_in.t[end]
+
+                
+            end
+            println("new M_fit = $(exp(logM_fit))")
+            span_out = (logM_inner, logM_fit)
+            span_in = (logM_outer, logM_fit )
+            nl_prob = remake(nl_prob, u0= nl_sol.u)
+            nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
+
+        end
+        if !SciMLBase.successful_retcode(nl_sol.retcode)
+            println("Reducing ODE solve tolerance")
+            println("abstol = $abstol")
+
+            abstol /= 10.
+            reltol /= 10.
+            nl_prob = remake(nl_prob, u0= nl_sol.u)
+            nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
+        end
     end
 
     if !SciMLBase.successful_retcode(nl_sol.retcode)
@@ -156,11 +195,10 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     # Generate the Final Converged Profiles
     best_log_P_c, best_log_R_surf = nl_sol.u
 
-
-    final_prob_out = ODEProblem(hse_system!, [log_r_min, best_log_P_c, 0.0], span_out, params)
-    final_sol_out = solve(final_prob_out, reltol=reltol,abstol=abstol)    
-    final_prob_in = ODEProblem(hse_system!, [best_log_R_surf, log_p_surf, 0.0], span_in, params)
-    final_sol_in = solve(final_prob_in, reltol=reltol,abstol=abstol)
+    prob_out = remake(prob_out, u0 = [log_r_min, best_log_P_c, 0.0])
+    final_sol_out = solve(prob_out, reltol=reltol,abstol=abstol)    
+    prob_in = remake(prob_in, u0=[best_log_R_surf, log_p_surf, 0.0])
+    final_sol_in = solve(prob_in, reltol=reltol,abstol=abstol)
     # Package and return
-    return CompositeODESolution(final_sol_out, final_sol_in), abstol, reltol
+    return CompositeODESolution(final_sol_out, final_sol_in), abstol, reltol, logM_fit
 end
