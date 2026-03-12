@@ -1,11 +1,15 @@
-function convect!(s_interp, s_center, v2_center,  m_center)
+
+function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParams{ConvectionOff, T}) where T
+end
+
+function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParams{ConvectionOn, T}) where T
     #while there is a negative entropy gradient
 
     diff(s_center)
     while !issorted(s_center)
         #find the first region 
         println("convection")
-
+       # semilogx(m_center, s_center)
         lower_idx, peak_idx, valley_idx, upper_idx = find_convective_zone(s_center)
         adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, peak_idx, valley_idx, upper_idx)
     end

@@ -11,25 +11,26 @@ function init_hdf5(filename, n_grid)
         # We chunk by 1 column at a time for time-series snapshots
         create_dataset(fid, "t", Float64, ((0,), (-1,)), chunk=(1,))
         
-        for name in ["P", "r", "m", "rho", "s"]
+        for name in ["P", "r", "m", "rho", "s", "L"]
             create_dataset(fid, name, Float64, (initial_dims, max_dims), chunk=(n_grid, 1))
         end
     end
 end
 
-function write_snapshot!(filename, i, t, p, r, m, ρ, s)
+function write_snapshot!(filename, i, t,state)
     h5open(filename, "r+") do fid
         HDF5.set_extent_dims(fid["t"], (i,))
-        for name in ["P", "r", "m", "rho", "s"]
+        for name in ["P", "r", "m", "rho", "s", "L"]
             HDF5.set_extent_dims(fid[name], (size(fid[name], 1), i))
         end
 
         fid["t"][i] = t 
-        fid["P"][:, i] = p  
-        fid["r"][:, i] = r
-        fid["m"][:, i] = m
-        fid["rho"][:, i] = ρ 
-        fid["s"][:, i] = s
+        fid["P"][:, i] = state.P_center  
+        fid["r"][:, i] = state.r_center
+        fid["m"][:, i] = state.m_center
+        fid["rho"][:, i] = state.ρ_center 
+        fid["s"][:, i] = state.s_center
+        fid["L"][:, i] = 0.5(state.L_face[2:end] .+ state.L_face[1:end-1])
     end
 end
 

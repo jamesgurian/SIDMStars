@@ -1,5 +1,20 @@
 
-@kwdef struct RunParams
+
+# Define abstract types for the categories
+abstract type ConvectionMode end
+abstract type EvaporationMode end
+
+# Define singleton types for the specific options
+struct ConvectionOn <: ConvectionMode end
+struct ConvectionOff <: ConvectionMode end
+
+struct EvaporationOn <: EvaporationMode end
+struct EvaporationOff <: EvaporationMode end
+@kwdef struct RunParams{TConv <: ConvectionMode, TEvap <: EvaporationMode}
+ 
+    convection::TConv = ConvectionOn()
+    evaporation::TEvap = EvaporationOn()
+    
     C::Float64 
     σ0::Float64
     w::Float64

@@ -57,7 +57,11 @@ end
 condition_τ(u,t, integrator) =  integrator.u[1] > 10
             
 cb_τ = DiscreteCallback(condition_τ, terminate!)
-function calc_evaporation(run_params,G, sol, s, m_face, m_center, v2s, v_vals)
+
+function calc_evaporation(run_params::RunParams{T, EvaporationOff},G, sol, s, m_face, m_center, v2s, v_vals) where T
+    return zeros(length(m_center)), zeros(length(m_center))
+end
+function calc_evaporation(run_params::RunParams{T, EvaporationOn},G, sol, s, m_face, m_center, v2s, v_vals) where T
     #each column is one geodesic
     #with its own initial (surface) velocity
     udot_cell = zeros(length(m_face)-1,length(v_vals))
