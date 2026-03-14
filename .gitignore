@@ -1,3 +1,8 @@
+.ipynb_checkpoints/
+output/
+plots/
+ssg_runs/
+ssg_notebooks/
 *.png
 *.pdf
 *.hdf5
