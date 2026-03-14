@@ -45,6 +45,10 @@ module Constants
     end
 
 export RunParams
+export ConvectionOn
+export ConvectionOff
+export EvaporationOff
+export EvaporationOn
 export initialize_profile
 export Constants
 export nfw_profile

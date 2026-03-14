@@ -64,15 +64,31 @@ function initialize_grid(sol, s, M_min, M_tot, gridpoints)
                      dsdt_evap, mdot_cum, dt_diff_array)
 end
 
-function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints)
-    
-    #we want to construct a grid which has resolution where log(r) or s are varying rapidly
+#we want to construct a grid which has resolution where log(r) or s are varying rapidly
+function calc_Q!(state, run_params::RunParams{ConvectionOn, T}) where T
     r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
     invP = 1 ./ state.P_center
     invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
     s_norm = (state.s_center .- state.s_center[1]) ./ (state.s_center[end] - state.s_center[1])
-        
+
     Q_center = (0.45) .* (r_norm .+ s_norm  ) .+ 0.1 .* invP_norm
+end
+
+#s is only guaranteed monotonic with convection on 
+#so we need a different Q which doesn't  rely on s
+function calc_Q!(state, run_params::RunParams{ConvectionOff, T}) where T
+    r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
+    invP = 1 ./ state.P_center
+    invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
+    #s_norm = (state.s_center .- state.s_center[1]) ./ (state.s_center[end] - state.s_center[1])
+
+    Q_center = (0.7) .* (r_norm ) .+ 0.3 .* invP_norm
+end
+
+
+function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints, run_params)
+    
+    Q_center = calc_Q!(state, run_params)
     #so we interpolate in normalized logr and s to get our new mass grid
     logm_of_Q = PCHIPInterpolation(state.logm_center, Q_center)
     Q_range = collect(range(Q_center[1], stop = Q_center[end], length=gridpoints-1))
@@ -132,14 +148,13 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     state.ρ_face .= sqrt.(state.ρ_center[1:end-1] .* state.ρ_center[2:end])
     state.prefactor_face .= 16 * pi^2 .* state.r_face[2:end-1].^4 .* state.ρ_face .* state.κ_face
     state.L_face[2:end-1] .= -state.prefactor_face .* dv2_dm_face *(3/2) #because K_{eff} is for u = 3/2 v^2
-
+    slope_L = state.L_face[2]/(state.m_face[2])
+    state.L_face[1] = state.L_face[2] + slope_L*(state.m_face[1]-state.m_face[2])
     state.dL_dm .= diff(state.L_face) ./ state.dm_cell
     state.dsdt_conduct .= -state.dL_dm ./ state.v2_center
     
-    #for the endpoints, we assume a powerlaw and extrapolate
-    slope_conduct1 = (state.dsdt_conduct[3] - state.dsdt_conduct[2])/log(state.dm_between_centers[2])
-    state.dsdt_conduct[1] = state.dsdt_conduct[2] - slope_conduct1 * log(state.dm_between_centers[1])
-
+    #for the endpoint, we assume a powerlaw and extrapolate
+   
     slope_conduct2 = (state.dsdt_conduct[end] - state.dsdt_conduct[end-1])/log(state.dm_between_centers[end])
     state.dsdt_conduct[end] = state.dsdt_conduct[end-1] + slope_conduct2 * log(state.dm_between_centers[end])
     
@@ -183,7 +198,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     t_prev_snap = 0.
     snap_idx = 1
     if !isinf(run_params.snap_interval_time)
-        write_snapshot!(run_params.snap_loc, snap_idx, t, state.P_center, state.r_center, state.m_center,  state.ρ_center, state.s_center)
+        write_snapshot!(run_params.snap_loc, snap_idx, t, state)
     end
 
     snap_idx=1
@@ -224,12 +239,13 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         #so we can't add them
 
         dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
-        convect!(s_interp, state.s_center, state.v2_center, state.m_center)
-        s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints)
+        convect!(s_interp, state.s_center, state.v2_center, state.m_center, run_params)
+        s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints, run_params)
         v2_esc_surface = 2 * (G * M_tot) / state.r_face[end] # neglecting the mass exterior to the integration region
         v2_esc_core = 2 * sol[end][3]
         vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt(2*v2_esc_core)),length=velocity_bins))
         dsdt_evap_new, mdot_cum_new = calc_evaporation(run_params, G, sol, s_interp, state.m_face, state.m_center, state.v2_center, vrange)
+        
         state.dsdt_evap .= dsdt_evap_new
         state.mdot_cum .= mdot_cum_new
         t_sub = 0.
@@ -237,9 +253,10 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         if t - t_prev_snap > run_params.snap_interval_time || abs((ρ_core - ρ_core_prev) / ρ_core_prev) > run_params.snap_interval_density
             ρ_core_prev = ρ_core
             println("writing snapshot $snap_idx")
-            write_snapshot!(run_params.snap_loc, snap_idx, t, state.P_center, state.r_center, state.m_center,  state.ρ_center, state.s_center)
+            write_snapshot!(run_params.snap_loc, snap_idx, t, state)
             snap_idx += 1;
             t_prev_snap = t
+           # semilogx(state.m_face, state.L_face)
            # loglog(state.m_center, 1 ./ abs.(state.dsdt_conduct))
             #loglog(state.m_center,1 ./ abs.(state.dsdt_evap), "--")
             #ylim(1e-5, 150)
