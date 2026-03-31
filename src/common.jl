@@ -14,7 +14,7 @@ struct EvaporationOff <: EvaporationMode end
  
     convection::TConv = ConvectionOn()
     evaporation::TEvap = EvaporationOn()
-    
+    G::Float64
     C::Float64 
     σ0::Float64
     w::Float64
@@ -22,6 +22,7 @@ struct EvaporationOff <: EvaporationMode end
     t_end::Float64
     r_max::Float64
     r_min::Float64
+    gridpoints::Int64
     snap_interval_time::Float64
     snap_interval_density::Float64
     snap_loc::String

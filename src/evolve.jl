@@ -64,6 +64,44 @@ function initialize_grid(sol, s, M_min, M_tot, gridpoints)
                      dsdt_evap, mdot_cum, dt_diff_array)
 end
 
+
+#where sol, s are functions of logm and sol gives logP, logR
+function initialize_grid_log(sol, s, M_min, M_tot, gridpoints)
+    x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1)
+    
+    m_face = M_min .+ (M_tot - M_min) .* x
+    m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
+   
+    logm_center = log.(m_center)
+    logm_face = log.(m_face)
+    r_center = exp.(sol(logm_center)[1,:])
+    r_face = exp.(sol(logm_face)[1,:])
+    P_center = exp.(sol(logm_center)[2,:])
+
+    dm_cell = diff(m_face)
+    dm_between_centers = diff(m_center)
+
+    s_center = s.(logm_center) 
+    ρ_center = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
+
+    # Preallocate the internal arrays
+    v2_center = zeros(length(m_center))
+    κ_center = zeros(length(m_center))
+    κ_face = zeros(length(κ_center)-1)
+    prefactor_face = zeros(length(κ_face))
+    L_face = zeros(length(m_face))
+    ρ_face = zeros(length(ρ_center)-1)
+    dL_dm = zeros(length(m_center))
+    dsdt_conduct = zeros(length(m_center))
+    dsdt_evap = zeros(length(m_center))
+    mdot_cum = zeros(length(m_center))
+    dt_diff_array = zeros(length(prefactor_face))
+
+    return GridState(x, m_face, m_center, logm_face, logm_center, dm_cell, dm_between_centers,
+                     r_face, r_center, P_center, s_center, ρ_center, ρ_face, v2_center,
+                     κ_center, κ_face, prefactor_face, L_face, dL_dm, dsdt_conduct,
+                     dsdt_evap, mdot_cum, dt_diff_array)
+end
 #we want to construct a grid which has resolution where log(r) or s are varying rapidly
 function calc_Q!(state, run_params::RunParams{ConvectionOn, T}) where T
     r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
@@ -167,15 +205,40 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     return sol, P_core, ρ_core, dt_diffusion, abstol, reltol, logM_fit
 end
 
+function take_step!(state, logP_core, logP_core_old, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol, dt)
 
+    dlogp_core = logP_core - logP_core_old
+    logP_guess = logP_core + dlogp_core
+    logP_core_old = logP_core # Update the 'old' tracker
+    
+    s_interp = PCHIPInterpolation(state.s_center, state.logm_center, extrapolation = ExtrapolationType.Linear)
 
-function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,gridpoints=50,velocity_bins=50, abstol=1e-5, reltol=1e-5)
+    sol, logP_core, ρ_core, dt_diffusion, abstol, reltol, logM_fit = explicit_dsdt_conduction!(
+        state, s_interp, logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol
+    )    
+    
+    state.s_center .+= dt .* (state.dsdt_conduct .+ state.dsdt_evap)  
+    state.m_center .+= state.mdot_cum .* dt
+    M_tot += state.mdot_cum[end] * dt
+    
+    state.m_face[2:end-1] .= 0.5 .* (state.m_center[2:end] .+ state.m_center[1:end-1])
+    state.m_face[end] = M_tot
+    state.dm_cell  .= diff(state.m_face)
+    state.logm_face .= log.(state.m_face)  
+    state.logm_center .= log.(state.m_center) 
+
+    # Return the updated scalars so they can be tracked in the main loop
+    return s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion
+end
+
+function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,velocity_bins=50, abstol=1e-5, reltol=1e-5)
+    gridpoints = run_params.gridpoints
     sol, s, M_tot = initialize_profile(run_params, rho_initial,p_outer=p_outer,mass_min_frac=mass_min_frac)
    
     
     M_min = mass_min_frac * M_tot
     r_min = sol(M_min)[1]
-    G = ustrip(uconvert(u"kpc*km^2/s^2/Msun", Constants.G))
+    G = run_params.G
 
     M_tot -= 1e-4*M_tot #bvp has a hard time with the true zero pressure BC, because we log transform P
     
@@ -196,6 +259,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     t_sub = 0.
     dt_kh = 0.
     t_prev_snap = 0.
+    dt_diffusion= 0.
     snap_idx = 1
     if !isinf(run_params.snap_interval_time)
         write_snapshot!(run_params.snap_loc, snap_idx, t, state)
@@ -209,26 +273,25 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         #and calculating the evaporation rate is relatively expensive
         #so we subscycle
 
-        while t_sub <= dt_kh &&  t < run_params.t_end
-            dlogp_core = (logP_core) - logP_core_old
-            logP_guess = logP_core + dlogp_core
-            logP_core_old = logP_core
-            #we need a monotonicity preserving interpolant for convection...
-            s_interp = PCHIPInterpolation(state.s_center, state.logm_center,extrapolation = ExtrapolationType.Linear)
-
-            sol, logP_core, ρ_core, dt_diffusion, abstol, reltol, logM_fit = explicit_dsdt_conduction!(
-                state, s_interp, logP_guess, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol
-            )    
+        while t_sub <= dt_kh &&  t < run_params.t_end && 
+            (t - t_prev_snap <= run_params.snap_interval_time && abs((ρ_core - ρ_core_prev) / ρ_core_prev) <= run_params.snap_interval_density)
             
-            state.s_center .+= dt_diffusion .* (state.dsdt_conduct .+ state.dsdt_evap)  
-            state.m_center .+= state.mdot_cum .* dt_diffusion
-            M_tot += state.mdot_cum[end] .* dt_diffusion
-            state.m_face[2:end-1] .= 0.5(state.m_center[2:end] .+ state.m_center[1:end-1])
-            state.m_face[end] = M_tot
-            state.dm_cell  .= diff(state.m_face)
-            state.logm_face .= log.(state.m_face)  
-            state.logm_center .= log.(state.m_center) 
-
+                        # Call the step function and unpack updated scalars
+            s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_step!(
+                state, 
+                logP_core, 
+                logP_core_old, 
+                M_min, 
+                M_tot, 
+                logM_fit, 
+                p_surf, 
+                G, 
+                eps_diff, 
+                run_params, 
+                abstol, 
+                reltol, 
+                dt_diffusion
+            )
             t += dt_diffusion
             t_sub += dt_diffusion
 

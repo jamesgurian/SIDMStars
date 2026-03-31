@@ -79,7 +79,7 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
 
     u0 = [(run_params.r_max*safety_factor), (p_outer)]
 
-    G = ustrip(uconvert(u"kpc*km^2/s^2/Msun", Constants.G))
+    G = run_params.G
     ode_params = (ρ_func = rho_initial, 
                     G = G)
    
