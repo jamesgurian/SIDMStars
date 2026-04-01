@@ -175,14 +175,12 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     state.κ_center  .= calc_κ.(state.P_center, state.s_center, Ref(run_params), G) 
     state.r_face .= exp.(sol(state.logm_face)[1,:])
     state.r_center .= exp.(sol(state.logm_center)[1,:])
-
     # Re-evaluate slope and r_min based on updated values
     slope = log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1])
     r_min_new = state.r_center[1] * (M_min/state.m_center[1])^slope
 
     dv2_dm_face = diff(state.v2_center) ./ state.dm_between_centers
-    state.κ_face .= 2 .* (state.κ_center[1:end-1] .* state.κ_center[2:end]) ./(state.κ_center[1:end-1] .+ state.κ_center[2:end]) #harmonic mean
-
+    state.κ_face .= 0.5 .* (state.κ_center[1:end-1] .+ state.κ_center[2:end])
     state.ρ_face .= sqrt.(state.ρ_center[1:end-1] .* state.ρ_center[2:end])
     state.prefactor_face .= 16 * pi^2 .* state.r_face[2:end-1].^4 .* state.ρ_face .* state.κ_face
     state.L_face[2:end-1] .= -state.prefactor_face .* dv2_dm_face *(3/2) #because K_{eff} is for u = 3/2 v^2
@@ -275,8 +273,8 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
         while t_sub <= dt_kh &&  t < run_params.t_end && 
             (t - t_prev_snap <= run_params.snap_interval_time && abs((ρ_core - ρ_core_prev) / ρ_core_prev) <= run_params.snap_interval_density)
-            
-                        # Call the step function and unpack updated scalars
+            t += dt_diffusion
+            t_sub += dt_diffusion
             s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_step!(
                 state, 
                 logP_core, 
@@ -292,8 +290,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
                 reltol, 
                 dt_diffusion
             )
-            t += dt_diffusion
-            t_sub += dt_diffusion
 
             
         end
