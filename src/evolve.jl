@@ -226,7 +226,7 @@ function take_substep!(state, logP_core, logP_core_old, M_min, M_tot, logM_fit, 
     state.logm_center .= log.(state.m_center) 
 
     # Return the updated scalars so they can be tracked in the main loop
-    return s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion
+    return s_interp, sol, ρ_core, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion
 end
 
 function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,velocity_bins=50, abstol=1e-5, reltol=1e-5)
@@ -258,12 +258,27 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     dt_kh = 0.
     t_prev_snap = 0.
     dt_diffusion= 0.
+    #take a dt=0 step to set everything up
+    s_interp, sol, ρ_core, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_substep!(
+                state, 
+                logP_core, 
+                logP_core_old, 
+                M_min, 
+                M_tot, 
+                logM_fit, 
+                p_surf, 
+                G, 
+                eps_diff, 
+                run_params, 
+                abstol, 
+                reltol, 
+                dt_diffusion
+            )
     snap_idx = 1
     if !isinf(run_params.snap_interval_time)
         write_snapshot!(run_params.snap_loc, snap_idx, t, state)
     end
-
-    snap_idx=1
+    snap_idx = 2
     s_interp = nothing
     while t < run_params.t_end
     println("t:", t) 
@@ -275,7 +290,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             (t - t_prev_snap <= run_params.snap_interval_time && abs((ρ_core - ρ_core_prev) / ρ_core_prev) <= run_params.snap_interval_density)
             t += dt_diffusion
             t_sub += dt_diffusion
-            s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_substep!(
+            s_interp, sol, ρ_core, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_substep!(
                 state, 
                 logP_core, 
                 logP_core_old, 
