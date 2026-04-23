@@ -107,8 +107,13 @@ function initialize_profile(run_params, rho_initial, M_tot; p_outer=1e-10, mass_
     # Integrate Mass Outwards 
     # dM = 4 * pi * r^2 * ρ * dr
     M_span = ((M_tot),(mass_min_frac*M_tot/2)) 
-
-    u0 = [(run_params.r_max*safety_factor), (p_outer)]
+    function enclosed_mass(R)
+        integrand(r) = 4π * r^2 * rho_initial(r)
+        mass, error = quadgk(integrand, 0.0, R)
+        return mass
+    end
+    r_max = find_zero(x -> enclosed_mass(x) - M_tot, (run_params.r_min, run_params.r_max))
+    u0 = [r_max, (p_outer)]
 
     G = run_params.G
     ode_params = (ρ_func = rho_initial, 
