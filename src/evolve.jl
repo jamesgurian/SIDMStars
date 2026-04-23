@@ -203,7 +203,7 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     return sol, P_core, ρ_core, dt_diffusion, abstol, reltol, logM_fit
 end
 
-function take_step!(state, logP_core, logP_core_old, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol, dt)
+function take_substep!(state, logP_core, logP_core_old, M_min, M_tot, logM_fit, p_surf, G, eps_diff, run_params, abstol, reltol, dt)
 
     dlogp_core = logP_core - logP_core_old
     logP_guess = logP_core + dlogp_core
@@ -275,7 +275,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             (t - t_prev_snap <= run_params.snap_interval_time && abs((ρ_core - ρ_core_prev) / ρ_core_prev) <= run_params.snap_interval_density)
             t += dt_diffusion
             t_sub += dt_diffusion
-            s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_step!(
+            s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_substep!(
                 state, 
                 logP_core, 
                 logP_core_old, 
