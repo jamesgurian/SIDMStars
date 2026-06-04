@@ -226,7 +226,7 @@ function take_step!(state, logP_core, logP_core_old, M_min, M_tot, logM_fit, p_s
     state.logm_center .= log.(state.m_center) 
 
     # Return the updated scalars so they can be tracked in the main loop
-    return s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion
+    return s_interp, sol, ρ_core, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion
 end
 
 function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,velocity_bins=50, abstol=1e-5, reltol=1e-5)
@@ -244,13 +244,17 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     
     #initialize the mechanical and thermodynamic state
     state = initialize_grid(sol, s, M_min, M_tot, gridpoints)
+    M_tot_init = M_tot
+    collapse_m_target = run_params.collapse_mass_frac * M_tot_init
+    collapse_idx = argmin(abs.(state.m_center .- collapse_m_target))
+    ρ_collapse_init = state.ρ_center[collapse_idx]
     p_surf = sol(M_tot)[2]
     logP_core = log(sol(M_min)[2])
     logP_core_old = logP_core
 
     ρ_core = M_min/(4/3 * pi * r_min^3)
     ρ_core_prev = ρ_core
-    init_hdf5(run_params.snap_loc, gridpoints-1)
+    init_hdf5(run_params.snap_loc, gridpoints-1, run_params)
 
     logM_fit = 0.5(log(M_tot) + log(M_min))
     t=0.
@@ -275,7 +279,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             (t - t_prev_snap <= run_params.snap_interval_time && abs((ρ_core - ρ_core_prev) / ρ_core_prev) <= run_params.snap_interval_density)
             t += dt_diffusion
             t_sub += dt_diffusion
-            s_interp, sol, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_step!(
+            s_interp, sol, ρ_core, logP_core, logP_core_old, M_tot, logM_fit, abstol, reltol, dt_diffusion = take_step!(
                 state, 
                 logP_core, 
                 logP_core_old, 
@@ -315,13 +319,17 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             write_snapshot!(run_params.snap_loc, snap_idx, t, state)
             snap_idx += 1;
             t_prev_snap = t
-           # semilogx(state.m_face, state.L_face)
-           # loglog(state.m_center, 1 ./ abs.(state.dsdt_conduct))
-            #loglog(state.m_center,1 ./ abs.(state.dsdt_evap), "--")
-            #ylim(1e-5, 150)
         end
-        
-  
-       
+
+        if !isinf(run_params.collapse_density_factor)
+            collapse_idx = argmin(abs.(state.m_center .- collapse_m_target))
+            if state.ρ_center[collapse_idx] / ρ_collapse_init >= run_params.collapse_density_factor
+                println("collapse termination: density factor $(run_params.collapse_density_factor) reached at t=$t")
+                write_snapshot!(run_params.snap_loc, snap_idx, t, state)
+                snap_idx += 1
+                break
+            end
+        end
+
    end
 end
