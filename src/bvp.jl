@@ -166,7 +166,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     u0_guess = [log_P_guess_in, log_R_guess_out]
     local nl_sol = nothing
     
-    max_retries = 50 
+    max_retries = 100 
     retries = 0
     
     # 3. State flag to track our fallback logic
@@ -199,10 +199,10 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
 
                     if e.t_in_end != logM_fit && e.t_out_end == logM_fit
                         println("Inward integration failed")
-                        logM_fit = e.t_in_end
+                        logM_fit = e.t_in_end + .03
                     elseif e.t_out_end != logM_fit && e.t_in_end == logM_fit
                         println("Outward integration failed")
-                        logM_fit = e.t_out_end
+                        logM_fit = e.t_out_end - .03
                     else
                         println("Both integrations failed. Good luck!")
                         logM_fit = e.t_in_end 
@@ -214,7 +214,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
                     span_out = (logM_inner, logM_fit)
                     span_in  = (logM_outer, logM_fit)
                     
-                    u0_guess = e.u 
+                    u0_guess = [log_P_guess_in, log_R_guess_out]
                     moved_fitting_point = true # Mark that we tried moving it
                 else
                     # It failed again, even after we just moved the fitting point
@@ -222,7 +222,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
                     println("abstol = $abstol")
                     abstol /= 10.
                     reltol /= 10.
-                    u0_guess = e.u 
+                    u0_guess = [log_P_guess_in, log_R_guess_out]
                     moved_fitting_point = false # Reset flag so we are allowed to move it again on the next failure
                 end
                 retries += 1

@@ -25,6 +25,6 @@ profile = setup_dk_profile(5e6, 7, 1.0, z=10)
 sol_init = initialize_profile(dm_params,profile, p_outer=0);
 #eps_diff: inverse number of timesteps per von Neumann constraint on dt
 #eps_kh: inverse number of timesteps per 1/\dot s
-evolve(dm_params,profile,eps_diff=0.2, eps_kh=.05, mass_min_frac=1e-4);
+evolve(dm_params,profile,eps_diff=0.2, eps_kh=.001, mass_min_frac=1e-5);
 snap = read_snapshot_file("dk_out.hdf5")
 #loglog(snap["r"], snap["rho"])
