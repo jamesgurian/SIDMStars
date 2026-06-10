@@ -15,7 +15,8 @@ end
 function calc_κ(P, s, run_params, G)
     ρ = P^(3/5) * exp(-2s/5)
     v2 = P/ρ
-    k_tot = 1. / (Kinv_smfp(v2, run_params)^(0.6) + Kinv_lmfp(v2, ρ, run_params, G)^(0.6)).^(1. ./ 0.6)
+    k_tot = 1. / (Kinv_smfp(v2, run_params)^(0.49) + Kinv_lmfp(v2, ρ, run_params, G)^(0.49
+    )).^(1. ./ 0.49)
     return k_tot
 end
 

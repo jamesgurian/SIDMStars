@@ -116,11 +116,12 @@ end
 #so we need a different Q which doesn't  rely on s
 function calc_Q!(state, run_params::RunParams{ConvectionOff, T}) where T
     r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
+    m_norm = (log.(state.m_center) .- log.(state.m_center[1])) ./ (log.(state.m_center[end]) - log.(state.m_center[1]))
+
     invP = 1 ./ state.P_center
     invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
-    #s_norm = (state.s_center .- state.s_center[1]) ./ (state.s_center[end] - state.s_center[1])
 
-    Q_center = (0.7) .* (r_norm ) .+ 0.3 .* invP_norm
+    Q_center = (0.4) .* (r_norm .+ m_norm ) .+ 0.2 .* invP_norm
 end
 
 
@@ -184,16 +185,21 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     state.ρ_face .= sqrt.(state.ρ_center[1:end-1] .* state.ρ_center[2:end])
     state.prefactor_face .= 16 * pi^2 .* state.r_face[2:end-1].^4 .* state.ρ_face .* state.κ_face
     state.L_face[2:end-1] .= -state.prefactor_face .* dv2_dm_face *(3/2) #because K_{eff} is for u = 3/2 v^2
+    slope_L = (state.L_face[3] - state.L_face[2]) / (state.m_face[3] - state.m_face[2])
+    state.L_face[1] = state.L_face[2] + slope_L*(state.m_face[1] - state.m_face[2])
     slope_L = state.L_face[2]/(state.m_face[2])
     state.L_face[1] = state.L_face[2] + slope_L*(state.m_face[1]-state.m_face[2])
     state.dL_dm .= diff(state.L_face) ./ state.dm_cell
+
+    
     state.dsdt_conduct .= -state.dL_dm ./ state.v2_center
     
     #for the endpoint, we assume a powerlaw and extrapolate
    
     slope_conduct2 = (state.dsdt_conduct[end] - state.dsdt_conduct[end-1])/log(state.dm_between_centers[end])
     state.dsdt_conduct[end] = state.dsdt_conduct[end-1] + slope_conduct2 * log(state.dm_between_centers[end])
-    
+    slope_conduct1 = (state.dsdt_conduct[3] - state.dsdt_conduct[2])/log(state.dm_between_centers[1])
+    state.dsdt_conduct[1] = state.dsdt_conduct[2] - slope_conduct1 * log(state.dm_between_centers[1])
     ρ_core = M_min/(4/3 * pi * r_min_new^3)
     P_core = sol(log(M_min))[2]
     
