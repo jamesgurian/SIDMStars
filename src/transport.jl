@@ -4,7 +4,7 @@ f_k5(v_over_w,n) = 1/3 * 2^(n-1) * v_over_w^n * gamma(n/2 + 4)
 
 function Kinv_smfp(v2, run_params) 
     b = 25 * sqrt(pi)/32 #smfp coefficient
-    4 * pi * run_params.σ0 * f_k5(sqrt(v2)/run_params.w, run_params.n)/(b * sqrt(v2)) 
+    run_params.σ0 * f_k5(sqrt(v2)/run_params.w, run_params.n)/(b * sqrt(v2)) 
 end
 
 function Kinv_lmfp(v2, ρ, run_params,G)
@@ -15,7 +15,8 @@ end
 function calc_κ(P, s, run_params, G)
     ρ = P^(3/5) * exp(-2s/5)
     v2 = P/ρ
-    k_tot = 1 / (Kinv_smfp(v2, run_params) + Kinv_lmfp(v2, ρ, run_params, G))
+    k_tot = 1. / (Kinv_smfp(v2, run_params)^(0.49) + Kinv_lmfp(v2, ρ, run_params, G)^(0.49
+    )).^(1. ./ 0.49)
     return k_tot
 end
 

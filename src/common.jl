@@ -26,6 +26,8 @@ struct EvaporationOff <: EvaporationMode end
     snap_interval_time::Float64
     snap_interval_density::Float64
     snap_loc::String
+    collapse_density_factor::Float64 = Inf
+    collapse_mass_frac::Float64 = 0.0
 end
 
 struct CompositeODESolution{T, U, S1, S2}

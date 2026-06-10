@@ -90,8 +90,8 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
 
     dv2(m) = 1/rho_initial(sol(m)[1]) * sol(m, Val{1})[2] - 
             sol(m)[2]/(4 * pi * sol(m)[1]^2 * rho_initial(sol(m)[1])^3) * ForwardDiff.derivative(rho_initial, sol(m)[1])
-    κ_func(m) = 1/ (Kinv_smfp(v2_func(m), run_params) + 
-                    Kinv_lmfp(v2_func(m), rho_initial(sol(m)[1]), run_params,G))
+    κ_func(m) = 1/ (Kinv_smfp(v2_func(m), run_params)^(1. ./ 3.) + 
+                    Kinv_lmfp(v2_func(m), rho_initial(sol(m)[1]), run_params,G)^(1. ./ 3.))^(3.)
     L_func(m) = -(16 * pi^2 * (sol(m)[1])^4 * 
                     rho_initial(sol(m)[1])* 
                     κ_func(m) *dv2(m)) 
