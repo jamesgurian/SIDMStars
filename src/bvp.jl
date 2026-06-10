@@ -227,7 +227,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
                 end
                 retries += 1
             else
-                rethrow(e) # Let things like DomainErrors or Interrupts bubble up
+                rethrow(e) 
             end
         end
     end

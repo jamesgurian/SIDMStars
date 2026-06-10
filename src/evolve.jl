@@ -165,8 +165,8 @@ function explicit_dsdt_conduction!(state::GridState, s_interp,  logP_guess, M_mi
     #sol = shoot_1p((log(M_min), log(M_tot)), logP_guess, log(r_min), log(p_surf), ode_params)
     log_rmax = log(state.r_face[end])
     
-    fit_idx = searchsortedlast(state.P_center, sqrt(state.P_center[1]),rev=true)
-    logM_fit = log(state.m_center[fit_idx])
+    #fit_idx = searchsortedlast(state.P_center, sqrt(state.P_center[1]),rev=true)
+    #logM_fit = log(state.m_center[fit_idx])
     sol, abstol, reltol, logM_fit = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), logM_fit, ode_params, abstol, reltol)
     state.P_center .= exp.(sol(state.logm_center)[2,:]) 
 
@@ -261,8 +261,8 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     ρ_core = M_min/(4/3 * pi * r_min^3)
     ρ_core_prev = ρ_core
     init_hdf5(run_params.snap_loc, gridpoints-1, run_params)
-
-    logM_fit = 0.5(log(M_tot) + log(M_min))
+    fit_idx = searchsortedlast(state.P_center, sqrt(state.P_center[1]),rev=true)
+    logM_fit = log(state.m_center[fit_idx])
     t=0.
     t_sub = 0.
     dt_kh = 0.
