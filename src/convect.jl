@@ -1,5 +1,6 @@
 
 function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParams{ConvectionOff, T}) where T
+    return s_interp
 end
 
 function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParams{ConvectionOn, T}) where T
@@ -11,8 +12,9 @@ function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParam
         println("convection")
        # semilogx(m_center, s_center)
         lower_idx, peak_idx, valley_idx, upper_idx = find_convective_zone(s_center)
-        adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, peak_idx, valley_idx, upper_idx)
+        s_interp = adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, peak_idx, valley_idx, upper_idx)
     end
+    return s_interp
 end
 
 function find_convective_zone(s_center)
@@ -118,7 +120,8 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
             
             # Flatten the profile
             s_center[idx_a:idx_b] .= s_current
-            return 
+            s_interp = PCHIPInterpolation(s_center, log.(m_center))
+            return s_interp
 
         end
     end
