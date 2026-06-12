@@ -142,12 +142,12 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
         # --- OUTWARD INTEGRATION ---
         u0_out = [log_r_min, curr_log_P_c, 0.0] 
         p_out = remake(prob_out, u0=u0_out, tspan=span_out)
-        sol_out = solve(p_out, reltol=reltol, abstol=abstol, save_everystep=false)
+        sol_out = solve(p_out, alg=Rodas5P(), reltol=reltol, abstol=abstol, save_everystep=false)
 
         # --- INWARD INTEGRATION ---
         u0_in = [curr_log_R_surf, log_p_surf, 0.0] 
         p_in = remake(prob_in, u0=u0_in, tspan=span_in)
-        sol_in = solve(p_in, reltol=reltol, abstol=abstol, save_everystep=false)
+        sol_in = solve(p_in, alg=Rodas5P(), reltol=reltol, abstol=abstol, save_everystep=false)
 
         if !SciMLBase.successful_retcode(sol_out.retcode) || !SciMLBase.successful_retcode(sol_in.retcode)
             # 2. Strip Dual tags safely at the throw site to maintain global type stability
@@ -176,7 +176,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
         nl_prob = NonlinearProblem(nf, u0_guess, nothing)
         
         try
-            nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-2, maxiters=1000)
+            nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-3, maxiters=1000)
             
             # If we get here without throwing, integration succeeded for all steps.
             if SciMLBase.successful_retcode(nl_sol.retcode)
@@ -186,7 +186,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
                 println("abstol = $abstol")
                 abstol /= 10.
                 reltol /= 10.
-                u0_guess = nl_sol.u
+                u0_guess = [log_P_guess_in, log_R_guess_out]
                 moved_fitting_point = false # Reset flag
             end
             
@@ -199,10 +199,10 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
 
                     if e.t_in_end != logM_fit && e.t_out_end == logM_fit
                         println("Inward integration failed")
-                        logM_fit = e.t_in_end + .03
+                        logM_fit = e.t_in_end + .01
                     elseif e.t_out_end != logM_fit && e.t_in_end == logM_fit
                         println("Outward integration failed")
-                        logM_fit = e.t_out_end - .03
+                        logM_fit = e.t_out_end - .01
                     else
                         println("Both integrations failed. Good luck!")
                         logM_fit = e.t_in_end 

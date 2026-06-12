@@ -28,7 +28,7 @@ struct GridState
 end
 
 function initialize_grid(sol, s, M_min, M_tot, gridpoints)
-    x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1)
+    x = (0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1))
     
     m_face = M_min .+ (M_tot - M_min) .* x
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
@@ -67,7 +67,7 @@ end
 
 #where sol, s are functions of logm and sol gives logP, logR
 function initialize_grid_log(sol, s, M_min, M_tot, gridpoints)
-    x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1)
+    x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)).^2 .+ 1)
     
     m_face = M_min .+ (M_tot - M_min) .* x
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
@@ -102,26 +102,19 @@ function initialize_grid_log(sol, s, M_min, M_tot, gridpoints)
                      κ_center, κ_face, prefactor_face, L_face, dL_dm, dsdt_conduct,
                      dsdt_evap, mdot_cum, dt_diff_array)
 end
-#we want to construct a grid which has resolution where log(r) or s are varying rapidly
-function calc_Q!(state, run_params::RunParams{ConvectionOn, T}) where T
-    r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
-    invP = 1 ./ state.P_center
-    invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
-    s_norm = (state.s_center .- state.s_center[1]) ./ (state.s_center[end] - state.s_center[1])
 
-    Q_center = (0.45) .* (r_norm .+ s_norm  ) .+ 0.1 .* invP_norm
-end
+function calc_Q!(state, run_params) where T
+    r_norm = (log.(state.r_center) .- log.(state.r_face[1])) ./ (log.(state.r_face[end]) - log.(state.r_face[1]))
+    m_norm = (log.(state.m_center) .- log.(state.m_face[1])) ./ (log.(state.m_face[end]) - log.(state.m_face[1]))
 
-#s is only guaranteed monotonic with convection on 
-#so we need a different Q which doesn't  rely on s
-function calc_Q!(state, run_params::RunParams{ConvectionOff, T}) where T
-    r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
-    m_norm = (log.(state.m_center) .- log.(state.m_center[1])) ./ (log.(state.m_center[end]) - log.(state.m_center[1]))
+    #r_norm_center = (log.(state.r_center) .- log.(state.r_face[1])) ./ (log.(state.r_face[end]) - log.(state.r_face[1]))
+    #m_norm_center = (log.(state.m_center) .- log.(state.m_face[1])) ./ (log.(state.m_face[end]) - log.(state.m_face[1]))
 
-    invP = 1 ./ state.P_center
-    invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
-
-    Q_center = (0.4) .* (r_norm .+ m_norm ) .+ 0.2 .* invP_norm
+    #invP = 1 ./ state.P_center
+    #invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
+    Q_center = m_norm# .+ 0.2 .* invP_norm
+    #Q_center = 0.5 .* (r_norm_center .+ m_norm_center)
+    return Q_center
 end
 
 
@@ -130,9 +123,9 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints,
     Q_center = calc_Q!(state, run_params)
     #so we interpolate in normalized logr and s to get our new mass grid
     logm_of_Q = PCHIPInterpolation(state.logm_center, Q_center)
-    Q_range = collect(range(Q_center[1], stop = Q_center[end], length=gridpoints-1))
-    logm_center_new = logm_of_Q(Q_range)
-
+    #Q_range = (range(Q_face[1], stop = Q_center[end], length=gridpoints))
+    logm_center_new = logm_of_Q(Q_center)
+    
     #and then update the state
     state.s_center .= s_interp(logm_center_new)
     state.logm_center .= logm_center_new
@@ -154,13 +147,13 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints,
     state.ρ_center  .= state.P_center.^(3/5) .* exp.(-2 .* state.s_center./ 5)
     state.v2_center .= state.P_center ./ state.ρ_center
     
-    s_interp = PCHIPInterpolation(copy(state.s_center), copy(state.logm_center), extrapolation = ExtrapolationType.Linear)
+    s_interp = PCHIPInterpolation((state.s_center), (state.logm_center), extrapolation = ExtrapolationType.Linear)
     return s_interp
 end
 
 
 function hse_update!(state::GridState, logP_guess, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
-    s_interp = PCHIPInterpolation(copy(state.s_center), copy(state.logm_center), extrapolation = ExtrapolationType.Linear)
+    s_interp = PCHIPInterpolation((state.s_center), (state.logm_center), extrapolation = ExtrapolationType.Linear)
 
     r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
     ode_params = StructureParams(s_interp, G)
@@ -181,7 +174,7 @@ function hse_update!(state::GridState, logP_guess, M_min, M_tot, logM_fit, p_sur
     return sol, s_interp, logP_core, ρ_core, r_min_new, abstol, reltol, logM_fit
 end
 
-function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_params)
+function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_params, ρ_core, logP_core)
     
     # Calculate derived center variables
     for i in eachindex(state.P_center)
@@ -194,7 +187,13 @@ function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_param
         state.v2_center[i] = P_c / ρ_c
         state.κ_center[i] = calc_κ(P_c, s_c, run_params, G)
     end
+    scaling = log(state.ρ_center[3]/state.ρ_center[2])/log(state.m_center[3]/state.m_center[2])
 
+    ρ_core = state.ρ_center[1] * ((state.m_face[1]/2) / state.m_center[1])^scaling
+    P_core = exp(logP_core) + G*state.m_face[1]/(4π*state.r_face[1]^4) * ((state.m_face[1]/2))
+    v2_core =P_core/ρ_core
+    s_core = -5. /2. *log(ρ_core/P_core^(3/5))
+    κ_core = calc_κ(P_core, s_core,run_params,G)
    
     for j in 1:(length(state.κ_center) - 1)
         
@@ -215,13 +214,15 @@ function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_param
         
         state.L_face[j+1] = -pref * dv2_dm * 1.5
     end
+    
+    dv2_dm_boundary= (state.v2_center[1] - v2_core) / (state.m_center[1] - state.m_face[1]/2.) 
+    κ_boundary = 0.5 * (κ_core + state.κ_center[1])
+    ρ_boundary = sqrt(ρ_core * state.ρ_center[1])
 
-   # L2, L3 = state.L_face[2], state.L_face[3]
-    ratio  = state.m_face[1]/state.m_face[2]
+    r_bound = state.r_face[1]
+    pref = 16* pi^2 * r_bound^4 * ρ_boundary * κ_boundary
+    state.L_face[1] = -pref * dv2_dm_boundary * 1.5
     
-    
-    state.L_face[1] = state.L_face[2] * ratio    
-  
     for i in eachindex(state.dL_dm)
         state.dL_dm[i] = (state.L_face[i+1] - state.L_face[i]) / state.dm_cell[i]
         state.dsdt_conduct[i] = - state.dL_dm[i] / state.v2_center[i]
@@ -230,23 +231,11 @@ function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_param
     
     #for the endpoint, we extrapolate
    
-   # slope_conduct2 = (state.dsdt_conduct[end-1] - state.dsdt_conduct[end-2])/log(state.dm_between_centers[end-1])
-    state.dsdt_conduct[end] = 0.
-    
-    slope_conduct1 = (state.dsdt_conduct[3] - state.dsdt_conduct[2])/log(state.dm_between_centers[2])
-    state.dsdt_conduct[1] = state.dsdt_conduct[2] - slope_conduct1 * log(state.dm_between_centers[1])
-    
-    state.dt_diff_array .= state.dm_between_centers .^2 ./ state.prefactor_face
-    if any(isnan.(state.dt_diff_array))
-        println("α", α)
-        println("rho", state.ρ_center[1])
-        println("s", state.s_center[1])
-        println(state.κ_face[1])
-        println(state.prefactor_face[1])
-                println(state.v2_center[1])
+    slope_conduct2 = (state.dsdt_conduct[end-1] - state.dsdt_conduct[end-2])/log(state.dm_between_centers[end-1])
+    state.dsdt_conduct[end] = state.dsdt_conduct[end-1] + slope_conduct2 * log(state.dm_between_centers[end])
 
-               
-    end
+    state.dt_diff_array .= state.dm_between_centers .^2 ./ state.prefactor_face
+
     dt_diffusion = eps_diff * minimum(state.dt_diff_array)
     
     return dt_diffusion
@@ -261,7 +250,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     r_min = sol(M_min)[1]
     G = run_params.G
 
-    M_tot -= 1e-4*M_tot #bvp has a hard time with the true zero pressure BC, because we log transform P
     
 
     
@@ -287,13 +275,15 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     dt_diffusion= 0.
     #set everything up
     sol, s_interp, logP_core, ρ_core, r_min, abstol, reltol, logM_fit = hse_update!(state, logP_core, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
-    dt_diffusion = explicit_dsdt_conduction!(state, sol, G, eps_diff, run_params)
-    
+    dt_diffusion = explicit_dsdt_conduction!(state, sol, G, eps_diff, run_params, ρ_core, logP_core)
+
     snap_idx = 1
     if !isinf(run_params.snap_interval_time)
         write_snapshot!(run_params.snap_loc, snap_idx, t, state)
     end
     snap_idx = 2
+    #s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints, run_params)
+
     while t < run_params.t_end
     println("t:", t) 
         #The von Neumann Stability condition is very strict compared to the thermal timescale
@@ -318,7 +308,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             state.logm_face .= log.(state.m_face)  
             state.logm_center .= log.(state.m_center) 
 
-            dt_diffusion = explicit_dsdt_conduction!(state, sol, G, eps_diff, run_params)
+            dt_diffusion = explicit_dsdt_conduction!(state, sol, G, eps_diff, run_params, ρ_core, logP_core)
             
             
 
@@ -335,9 +325,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         logP_guess = logP_core + dlogp_core
         logP_core_old = logP_core # Update the 'old' tracker
         sol, s_interp, logP_core, ρ_core, r_min, abstol, reltol, logM_fit = hse_update!(state, logP_core, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
-        s_interp = convect!(s_interp, state.s_center, state.v2_center, state.m_center, run_params)
+        convect!(s_interp, state.s_center, state.v2_center, state.m_center, run_params)
 
-        s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints, run_params)
+       # s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints, run_params)
 
         v2_esc_surface = 2 * (G * M_tot) / state.r_face[end] # neglecting the mass exterior to the integration region
         v2_esc_core = 2 * sol[end][3]
