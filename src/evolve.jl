@@ -28,9 +28,12 @@ struct GridState
 end
 
 function initialize_grid(sol, s, M_min, M_tot, gridpoints)
-    x = (0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1))
-    
+    x = (0.5 .* (cos.(range(pi, stop=0, length = gridpoints)) .+ 1)).^(1.)
     m_face = M_min .+ (M_tot - M_min) .* x
+    #m_face = zeros(gridpoints)
+    #m_face[1] = M_min
+    #m_face[2] = 10 * M_min
+    #m_face[2:end] .= exp.(range(log(50*M_min), stop = log(M_tot), length = gridpoints-1))
     m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
    
     logm_center = log.(m_center)
@@ -65,55 +68,11 @@ function initialize_grid(sol, s, M_min, M_tot, gridpoints)
 end
 
 
-#where sol, s are functions of logm and sol gives logP, logR
-function initialize_grid_log(sol, s, M_min, M_tot, gridpoints)
-    x = 0.5 .* (cos.(range(pi, stop=0, length = gridpoints)).^2 .+ 1)
-    
-    m_face = M_min .+ (M_tot - M_min) .* x
-    m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])
-   
-    logm_center = log.(m_center)
-    logm_face = log.(m_face)
-    r_center = exp.(sol(logm_center)[1,:])
-    r_face = exp.(sol(logm_face)[1,:])
-    P_center = exp.(sol(logm_center)[2,:])
-
-    dm_cell = diff(m_face)
-    dm_between_centers = diff(m_center)
-
-    s_center = s.(logm_center) 
-    ρ_center = P_center.^(3/5) .* exp.(-2 .* s_center./ 5)
-
-    # Preallocate the internal arrays
-    v2_center = zeros(length(m_center))
-    κ_center = zeros(length(m_center))
-    κ_face = zeros(length(κ_center)-1)
-    prefactor_face = zeros(length(κ_face))
-    L_face = zeros(length(m_face))
-    ρ_face = zeros(length(ρ_center)-1)
-    dL_dm = zeros(length(m_center))
-    dsdt_conduct = zeros(length(m_center))
-    dsdt_evap = zeros(length(m_center))
-    mdot_cum = zeros(length(m_center))
-    dt_diff_array = zeros(length(prefactor_face))
-
-    return GridState(x, m_face, m_center, logm_face, logm_center, dm_cell, dm_between_centers,
-                     r_face, r_center, P_center, s_center, ρ_center, ρ_face, v2_center,
-                     κ_center, κ_face, prefactor_face, L_face, dL_dm, dsdt_conduct,
-                     dsdt_evap, mdot_cum, dt_diff_array)
-end
 
 function calc_Q!(state, run_params) where T
     r_norm = (log.(state.r_center) .- log.(state.r_face[1])) ./ (log.(state.r_face[end]) - log.(state.r_face[1]))
     m_norm = (log.(state.m_center) .- log.(state.m_face[1])) ./ (log.(state.m_face[end]) - log.(state.m_face[1]))
-
-    #r_norm_center = (log.(state.r_center) .- log.(state.r_face[1])) ./ (log.(state.r_face[end]) - log.(state.r_face[1]))
-    #m_norm_center = (log.(state.m_center) .- log.(state.m_face[1])) ./ (log.(state.m_face[end]) - log.(state.m_face[1]))
-
-    #invP = 1 ./ state.P_center
-    #invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
-    Q_center = m_norm# .+ 0.2 .* invP_norm
-    #Q_center = 0.5 .* (r_norm_center .+ m_norm_center)
+    Q_center = 0.5 .* (r_norm .+ m_norm)
     return Q_center
 end
 
@@ -152,14 +111,14 @@ function update_grid!(state::GridState, M_min, M_tot, s_interp, sol, gridpoints,
 end
 
 
-function hse_update!(state::GridState, logP_guess, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
+function hse_update!(state::GridState, logP_guess, logP_core_old, ρ_core_old, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
     s_interp = PCHIPInterpolation((state.s_center), (state.logm_center), extrapolation = ExtrapolationType.Linear)
 
-    r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
+   # r_min = state.r_center[1] * (M_min/state.m_center[1])^(log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1]))
     ode_params = StructureParams(s_interp, G)
     log_rmax = log(state.r_face[end])
     
-    sol, abstol, reltol, logM_fit = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, log_rmax, log(r_min), log(p_surf), logM_fit, ode_params, abstol, reltol)
+    sol, abstol, reltol, logM_fit = shoot_2p_fit((log(M_min), log(M_tot)), logP_guess, logP_core_old, log_rmax, log(state.r_face[1]), log(p_surf), logM_fit, ode_params, abstol, reltol)
     state.P_center .= exp.(sol(state.logm_center)[2,:]) 
     state.r_face .= exp.(sol(state.logm_face)[1,:])
     state.r_center .= exp.(sol(state.logm_center)[1,:])
@@ -167,17 +126,20 @@ function hse_update!(state::GridState, logP_guess, M_min, M_tot, logM_fit, p_sur
     state.v2_center .= state.P_center ./ state.ρ_center
     
     slope = log(state.r_center[2]/state.r_center[1])/log(state.m_center[2]/state.m_center[1])
-    r_min_new = state.r_center[1] * (M_min/state.m_center[1])^slope
+    #r_min_new = state.r_center[1] * (M_min/state.m_center[1])^slope
+    r_min_new = state.r_face[1]
+
     ρ_core = M_min/(4/3 * pi * r_min_new^3)
     logP_core = sol(log(M_min))[2]
-    
-    return sol, s_interp, logP_core, ρ_core, r_min_new, abstol, reltol, logM_fit
+    r_min_new = state.m_face[1]
+    dE_implied = (3.0 * M_min * exp(logP_core_old)) / (2.0 *ρ_core_old) * ((exp(logP_core-logP_core_old)^0.25) - 1.0)
+    return sol, s_interp, logP_core, ρ_core, r_min_new, abstol, reltol, logM_fit, dE_implied
 end
 
 function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_params, ρ_core, logP_core)
     
     # Calculate derived center variables
-    for i in eachindex(state.P_center)
+    @inbounds @simd for i in eachindex(state.P_center)
         P_c = state.P_center[i]
         s_c = state.s_center[i]
         
@@ -187,25 +149,22 @@ function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_param
         state.v2_center[i] = P_c / ρ_c
         state.κ_center[i] = calc_κ(P_c, s_c, run_params, G)
     end
-    scaling = log(state.ρ_center[3]/state.ρ_center[2])/log(state.m_center[3]/state.m_center[2])
+    scaling = 0. #log(state.ρ_center[6]/state.ρ_center[5])/log(state.m_center[6]/state.m_center[5])
 
     ρ_core = state.ρ_center[1] * ((state.m_face[1]/2) / state.m_center[1])^scaling
-    P_core = exp(logP_core) + G*state.m_face[1]/(4π*state.r_face[1]^4) * ((state.m_face[1]/2))
+    P_core = exp(logP_core)# + G*state.m_face[1]/(4π*state.r_face[1]^4) * ((state.m_face[1]/2))
     v2_core =P_core/ρ_core
     s_core = -5. /2. *log(ρ_core/P_core^(3/5))
     κ_core = calc_κ(P_core, s_core,run_params,G)
    
-    for j in 1:(length(state.κ_center) - 1)
+    @inbounds @simd for j in 1:(length(state.κ_center) - 1)
         
-        # Replaces: diff(state.v2_center) ./ state.dm_between_centers
         dv2_dm = (state.v2_center[j+1] - state.v2_center[j]) / state.dm_between_centers[j]
         
         # Averages across the face
         κ_f = 0.5 * (state.κ_center[j] + state.κ_center[j+1])
         ρ_f = sqrt(state.ρ_center[j] * state.ρ_center[j+1])
-        
-        state.κ_face[j] = κ_f
-        state.ρ_face[j] = ρ_f
+     
         
         r_f = state.r_face[j+1] 
         
@@ -221,9 +180,9 @@ function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_param
 
     r_bound = state.r_face[1]
     pref = 16* pi^2 * r_bound^4 * ρ_boundary * κ_boundary
-    state.L_face[1] = -pref * dv2_dm_boundary * 1.5
+    #state.L_face[1] = -pref * dv2_dm_boundary * 1.5
     
-    for i in eachindex(state.dL_dm)
+    @inbounds @simd for i in eachindex(state.dL_dm)
         state.dL_dm[i] = (state.L_face[i+1] - state.L_face[i]) / state.dm_cell[i]
         state.dsdt_conduct[i] = - state.dL_dm[i] / state.v2_center[i]
     end
@@ -232,7 +191,7 @@ function explicit_dsdt_conduction!(state::GridState, sol, G, eps_diff, run_param
     #for the endpoint, we extrapolate
    
     slope_conduct2 = (state.dsdt_conduct[end-1] - state.dsdt_conduct[end-2])/log(state.dm_between_centers[end-1])
-    state.dsdt_conduct[end] = state.dsdt_conduct[end-1] + slope_conduct2 * log(state.dm_between_centers[end])
+    state.dsdt_conduct[end] = 0.#state.dsdt_conduct[end-1] + slope_conduct2 * log(state.dm_between_centers[end])
 
     state.dt_diff_array .= state.dm_between_centers .^2 ./ state.prefactor_face
 
@@ -274,7 +233,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     t_prev_snap = 0.
     dt_diffusion= 0.
     #set everything up
-    sol, s_interp, logP_core, ρ_core, r_min, abstol, reltol, logM_fit = hse_update!(state, logP_core, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
+    sol, s_interp, logP_core, ρ_core, r_min, abstol, reltol, logM_fit, Edot_implied = hse_update!(state, logP_core, logP_core_old, ρ_core, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
     dt_diffusion = explicit_dsdt_conduction!(state, sol, G, eps_diff, run_params, ρ_core, logP_core)
 
     snap_idx = 1
@@ -307,7 +266,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
             state.logm_face .= log.(state.m_face)  
             state.logm_center .= log.(state.m_center) 
-
             dt_diffusion = explicit_dsdt_conduction!(state, sol, G, eps_diff, run_params, ρ_core, logP_core)
             
             
@@ -324,10 +282,10 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         dlogp_core = logP_core - logP_core_old
         logP_guess = logP_core + dlogp_core
         logP_core_old = logP_core # Update the 'old' tracker
-        sol, s_interp, logP_core, ρ_core, r_min, abstol, reltol, logM_fit = hse_update!(state, logP_core, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
+        sol, s_interp, logP_core, ρ_core, r_min, abstol, reltol, logM_fit, Edot_implied = hse_update!(state, logP_core, logP_core_old, ρ_core, M_min, M_tot, logM_fit, p_surf, G, abstol, reltol)
         convect!(s_interp, state.s_center, state.v2_center, state.m_center, run_params)
-
-       # s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints, run_params)
+        state.L_face[1] = Edot_implied/dt_kh
+        #s_interp= update_grid!(state, M_min, M_tot, s_interp, sol, gridpoints, run_params)
 
         v2_esc_surface = 2 * (G * M_tot) / state.r_face[end] # neglecting the mass exterior to the integration region
         v2_esc_core = 2 * sol[end][3]

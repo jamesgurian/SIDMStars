@@ -124,7 +124,7 @@ struct IntegrationFailure <: Exception
     t_in_end::Float64
     u::Vector{Float64}
 end
-function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_surf, logM_fit, params, abstol, reltol)
+function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r_min_old, log_p_surf, logM_fit, params, abstol, reltol)
     logM_inner = mspan[1]
     logM_outer = mspan[2]
     
@@ -133,14 +133,14 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     
     prob_out = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, (0., 0., 0.), span_out, params)
     prob_in  = ODEProblem{true,SciMLBase.FullSpecialize}(hse_system!, (0., 0., 0.), span_in, params)
-
+    r_min_old = exp(log_r_min_old)
     # Define the Residual Function for NonlinearSolve
     function get_residuals!(resid, u, p)
         curr_log_P_c    = u[1]
         curr_log_R_surf = u[2]
-
+        curr_log_r_min = log(r_min_old * (exp(curr_log_P_c-log_P_c_old))^(-0.25))
         # --- OUTWARD INTEGRATION ---
-        u0_out = [log_r_min, curr_log_P_c, 0.0] 
+        u0_out = [curr_log_r_min, curr_log_P_c, 0.0] 
         p_out = remake(prob_out, u0=u0_out, tspan=span_out)
         sol_out = solve(p_out, alg=Rodas5P(), reltol=reltol, abstol=abstol, save_everystep=false)
 
@@ -166,13 +166,13 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
     u0_guess = [log_P_guess_in, log_R_guess_out]
     local nl_sol = nothing
     
-    max_retries = 100 
+    max_retries = 10
     retries = 0
     
     # 3. State flag to track our fallback logic
     moved_fitting_point = false
 
-    while abstol >= 1e-13 && retries < max_retries
+    while retries < max_retries && abstol > 1e-16
         nl_prob = NonlinearProblem(nf, u0_guess, nothing)
         
         try
@@ -184,9 +184,11 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
             else
                 println("NLsolve failed to converge. Reducing ODE solve tolerance.")
                 println("abstol = $abstol")
-                abstol /= 10.
-                reltol /= 10.
-                u0_guess = [log_P_guess_in, log_R_guess_out]
+                
+                    abstol /= 10.
+                    reltol /= 10.
+             
+                #u0_guess = [log_P_guess_in, log_R_guess_out]
                 moved_fitting_point = false # Reset flag
             end
             
@@ -199,10 +201,10 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
 
                     if e.t_in_end != logM_fit && e.t_out_end == logM_fit
                         println("Inward integration failed")
-                        logM_fit = e.t_in_end + .01
+                        logM_fit = e.t_in_end + .02
                     elseif e.t_out_end != logM_fit && e.t_in_end == logM_fit
                         println("Outward integration failed")
-                        logM_fit = e.t_out_end - .01
+                        logM_fit = e.t_out_end - .02
                     else
                         println("Both integrations failed. Good luck!")
                         logM_fit = e.t_in_end 
@@ -220,9 +222,20 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
                     # It failed again, even after we just moved the fitting point
                     println("Integration failed again after moving fitting point. Reducing ODE solve tolerance.")
                     println("abstol = $abstol")
-                    abstol /= 10.
-                    reltol /= 10.
-                    u0_guess = [log_P_guess_in, log_R_guess_out]
+                     if e.t_in_end != logM_fit && e.t_out_end == logM_fit
+                        println("Inward integration failed at ", exp(e.t_in_end))
+                    elseif e.t_out_end != logM_fit && e.t_in_end == logM_fit
+                        println("Outward integration failed at ", exp(e.t_out_end))
+                       # logM_fit = e.t_out_end - .02
+                    else
+                        println("Both integrations failed. Good luck!")
+                        logM_fit = e.t_in_end 
+                
+
+                    end
+                        abstol /= 10.
+                        reltol /= 10.
+                    #u0_guess = [log_P_guess_in, log_R_guess_out]
                     moved_fitting_point = false # Reset flag so we are allowed to move it again on the next failure
                 end
                 retries += 1
@@ -240,13 +253,12 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_R_guess_out, log_r_min, log_p_s
 
     # Generate the Final Converged Profiles
     best_log_P_c, best_log_R_surf = isnothing(nl_sol) ? u0_guess : nl_sol.u
-
-    p_out_final = remake(prob_out, u0=[log_r_min, best_log_P_c, 0.0], tspan=span_out)
+    best_log_r_min = log(r_min_old * (exp(best_log_P_c-log_P_c_old))^(-0.25))
+    p_out_final = remake(prob_out, u0=[best_log_r_min, best_log_P_c, 0.0], tspan=span_out)
     final_sol_out = solve(p_out_final, reltol=reltol, abstol=abstol)    
     
     p_in_final = remake(prob_in, u0=[best_log_R_surf, log_p_surf, 0.0], tspan=span_in)
     final_sol_in = solve(p_in_final, reltol=reltol, abstol=abstol)
-    
     # Package and return
-    return CompositeODESolution(final_sol_out, final_sol_in), abstol, reltol, logM_fit
+    return CompositeODESolution(final_sol_out, final_sol_in), abstol, reltol, logM_fit, best_log_P_c
 end
