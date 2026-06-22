@@ -74,34 +74,102 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
     # Integrate Mass Outwards 
     # dM = 4 * pi * r^2 * ρ * dr
     safety_factor=1 #integrate a bit further, in case the bc was weird
-    M_tot, _ = quadgk(r -> 4 * pi * r^2 * rho_initial(r), 1e-3run_params.r_min, run_params.r_max*safety_factor)
-    M_span = ((M_tot),(mass_min_frac*M_tot/2)) 
+        
+    r_start = 1e-3 * run_params.r_min
+    r_end = run_params.r_max * safety_factor
 
-    u0 = [(run_params.r_max*safety_factor), (p_outer)]
+    # 2. Calculate total mass
+    M_tot, _ = quadgk(r -> 4 * pi * r^2 * rho_initial(r), r_start, r_end)
 
+    # 3. Find r_core using Roots.jl
+    M_target = mass_min_frac * M_tot
+
+    # Objective function: difference between enclosed mass at r and the target mass
+    mass_diff(r) = quadgk(x -> 4 * pi * x^2 * rho_initial(x), r_start, r)[1] - M_target
+
+    # find_zero will quickly find the root within the bracketing interval
+    #r_core = find_zero(mass_diff, (r_start, r_end))
+
+    # 4. Create the modified, continuous density profile
+   # rho_core = rho_initial(r_core)
+   # rho_modified(r) = r > r_core ? rho_initial(r) : rho_core
+
+    # 5. Set up and solve the ODE using the modified density
+    M_span = (M_tot, M_target) 
+    u0 = [r_end, p_outer] 
     G = run_params.G
-    ode_params = (ρ_func = rho_initial, 
-                    G = G)
-   
-    prob = ODEProblem(hse_system_rho!,u0, M_span, ode_params)
 
-    sol = solve(prob,reltol=1e-8)
-    v2_func(m) = sol(m)[2]/(rho_initial(sol(m)[1]))
+    # Pass our new rho_modified function instead of rho_initial
+    ode_params = (ρ_func = rho_initial, G = G)
 
-    dv2(m) = 1/rho_initial(sol(m)[1]) * sol(m, Val{1})[2] - 
-            sol(m)[2]/(4 * pi * sol(m)[1]^2 * rho_initial(sol(m)[1])^3) * ForwardDiff.derivative(rho_initial, sol(m)[1])
+    prob = ODEProblem(hse_system_rho!, u0, M_span, ode_params)
+    sol = solve(prob, reltol=1e-8)
+    v2_func(m) = sol(m)[2]/(rho_modified(sol(m)[1]))
+
+    dv2(m) = 1/rho_modified(sol(m)[1]) * sol(m, Val{1})[2] - 
+            sol(m)[2]/(4 * pi * sol(m)[1]^2 *rho_modified(sol(m)[1])^3) * ForwardDiff.derivative(rho_initial, sol(m)[1])
     κ_func(m) = 1/ (Kinv_smfp(v2_func(m), run_params)^(1. ./ 3.) + 
-                    Kinv_lmfp(v2_func(m), rho_initial(sol(m)[1]), run_params,G)^(1. ./ 3.))^(3.)
+                    Kinv_lmfp(v2_func(m), rho_modified(sol(m)[1]), run_params,G)^(1. ./ 3.))^(3.)
     L_func(m) = -(16 * pi^2 * (sol(m)[1])^4 * 
-                    rho_initial(sol(m)[1])* 
+                    rho_modified(sol(m)[1])* 
                     κ_func(m) *dv2(m)) 
 
-    s_func(m) = log(sol(m)[2]^(3/2)/rho_initial(sol(m)[1])^(5/2)) 
+    s_func(m) = log(sol(m)[2]^(3/2)/rho_modified(sol(m)[1])^(5/2)) 
     dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
-    
     return sol, s_func, M_tot
 end
 
+
+function initialize_profile(run_params, rho_initial, M_min, M_tot; p_outer=1e-10, mass_min_frac=1e-7)
+    # Setup a Radial Grid 
+    # Integrate Mass Outwards 
+    # dM = 4 * pi * r^2 * ρ * dr
+    safety_factor=1 #integrate a bit further, in case the bc was weird
+        
+    r_start = 1e-3 * run_params.r_min
+    r_end = run_params.r_max * safety_factor
+
+    # 2. Calculate total mass
+   # M_tot, _ = quadgk(r -> 4 * pi * r^2 * rho_initial(r), r_start, r_end)
+
+    # 3. Find r_core using Roots.jl
+   # M_target = mass_min_frac * M_tot
+
+    # Objective function: difference between enclosed mass at r and the target mass
+    # quadgk returns a tuple (integral, error), so we grab [1]
+    mass_diff(r) = quadgk(x -> 4 * pi * x^2 * rho_initial(x), r_start, r)[1] - M_min
+
+    # find_zero will quickly find the root within the bracketing interval
+    r_core = find_zero(mass_diff, (r_start, r_end))
+
+    # 4. Create the modified, continuous density profile
+    rho_core = rho_initial(r_core)
+    rho_modified(r) = r > r_core ? rho_initial(r) : rho_core
+
+    # 5. Set up and solve the ODE using the modified density
+    M_span = (M_tot, M_min)
+    u0 = SVector(r_end, Float64(p_outer))
+    G = run_params.G
+
+    ode_params = (ρ_func = rho_modified, G = G)
+
+    prob = ODEProblem(hse_system_rho, u0, M_span, ode_params)
+    sol = solve(prob, reltol=1e-8)
+    v2_func(m) = sol(m)[2]/(rho_modified(sol(m)[1]))
+
+    dv2(m) = 1/rho_modified(sol(m)[1]) * sol(m, Val{1})[2] - 
+            sol(m)[2]/(4 * pi * sol(m)[1]^2 *rho_modified(sol(m)[1])^3) * ForwardDiff.derivative(rho_initial, sol(m)[1])
+    κ_func(m) = 1/ (Kinv_smfp(v2_func(m), run_params)^(1. ./ 3.) + 
+                    Kinv_lmfp(v2_func(m), rho_modified(sol(m)[1]), run_params,G)^(1. ./ 3.))^(3.)
+    L_func(m) = -(16 * pi^2 * (sol(m)[1])^4 * 
+                    rho_modified(sol(m)[1])* 
+                    κ_func(m) *dv2(m)) 
+
+    s_func(m) = log(sol(m)[2]^(3/2)/rho_modified(sol(m)[1])^(5/2)) 
+    dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
+    return sol, s_func
+end
+#=
 function initialize_profile(run_params, rho_initial, M_tot; p_outer=1e-10, mass_min_frac=1e-7)
     # Setup a Radial Grid 
     # Integrate Mass Outwards 
@@ -136,4 +204,4 @@ function initialize_profile(run_params, rho_initial, M_tot; p_outer=1e-10, mass_
     dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
     
     return sol, s_func
-end
+end=#

@@ -28,6 +28,7 @@ struct EvaporationOff <: EvaporationMode end
     snap_loc::String
     collapse_density_factor::Float64 = Inf
     collapse_mass_frac::Float64 = 0.0
+    f_k5_prefactor::Float64 = ((1/3) * 2^(n-1) * gamma(n/2 + 4)) / (w^n)
 end
 
 struct CompositeODESolution{T, U, S1, S2}
@@ -38,16 +39,13 @@ struct CompositeODESolution{T, U, S1, S2}
     t_fit::Float64
     potential_shift::Float64
 end
-
 function CompositeODESolution(sol_out, sol_in; t_fit = sol_out.t[end])
     # We want the zero point defined by sol_out, so we shift sol_in to match at t_fit.
     u_out_fit = sol_out(t_fit)
     u_in_fit  = sol_in(t_fit)
     shift = u_out_fit[3] - u_in_fit[3]
     u_in_shifted = map(sol_in.u) do u
-        u_new = copy(u)
-        u_new[3] += shift
-        u_new
+        u_new = SVector{3}(u[1], u[2], u[3] + shift)
     end
 
     # Inward integrations have decreasing time arrays. We reverse them 

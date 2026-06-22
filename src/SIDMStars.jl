@@ -8,6 +8,7 @@
 
 module SIDMStars
 using LinearAlgebra
+using LoopVectorization
 using DifferentialEquations
 using HDF5
 using ForwardDiff
