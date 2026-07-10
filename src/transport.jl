@@ -38,7 +38,13 @@ end
         βt = run_params.sonine_blend * ki_l / ki_s1
         ki_s = ki_s1 * (k2 + βt * k5) / (k5 * (1 + βt))
     end
-    if run_params.cross_c > 0
+    if run_params.bump_A > 0
+        # Log-Gaussian resistivity bump on the harmonic sum (see common.jl):
+        # exact asymptotic branches on both sides, free depth/width.
+        u = log(ki_s / ki_l)
+        k_tot = 1. / ((ki_s + ki_l) *
+                      (1. + run_params.bump_A * exp(-u^2 / (2 * run_params.bump_W^2))))
+    elseif run_params.cross_c > 0
         # Depth-matched cross-term form (see common.jl): O(Kn²) tails both sides.
         k_tot = 1. / (ki_s + ki_l + run_params.cross_c * ki_s * ki_l / (ki_s + ki_l))
     else

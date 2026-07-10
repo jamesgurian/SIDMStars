@@ -52,6 +52,17 @@ struct EvaporationOff <: EvaporationMode end
     # reproduces the p = 0.49 resistivity exactly at Kinv_smfp = Kinv_lmfp.
     # Default 0 keeps the soft-min.
     cross_c::Float64 = 0.0
+    # Log-Gaussian resistivity bump on the harmonic sum (fit_bump.jl): if
+    # bump_A > 0 it takes precedence over cross_c/blend_p,
+    #   1/κ = (Kinv_smfp + Kinv_lmfp) · [1 + A exp(−u²/2W²)],
+    #   u = ln(Kinv_smfp/Kinv_lmfp).
+    # The bump dies super-polynomially, so both tails are exactly the
+    # asymptotic branches (SMFP side Burnett-consistent O(Kn_loc²)), while the
+    # crossover depth A and log-width W are free. t-space fit to the 1e7
+    # constant-σ DSMC points (center pinned at branch equality):
+    # (A, W) = (0.9166 ± 0.052, 2.2299 ± 0.122), rms 0.006 dex.
+    bump_A::Float64 = 0.0
+    bump_W::Float64 = 2.2299
     # K_p prefactors (Eq. K_p): K_p = K_p_prefactor * v2^(n/2), with
     # K_p ∝ Γ((n+p+3)/2), for the power-law cross section σ = σ0 (v/w)^n.
     # K5 reproduces the previous `f_k5_prefactor` exactly.
