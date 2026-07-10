@@ -44,6 +44,14 @@ struct EvaporationOff <: EvaporationMode end
     # first-order-in-Kn deficit ≈ (1/p) Kn_loc^{2p}. p = 1 (harmonic sum)
     # gives the Burnett-consistent O(Kn_loc²) tail instead.
     blend_p::Float64 = 0.49
+    # Cross-term crossover form (smfp_drift_note, Outlook): if cross_c > 0 it
+    # replaces the blend_p soft-min with the depth-matched harmonic sum
+    #   1/κ = Kinv_smfp + Kinv_lmfp + c · Kinv_smfp·Kinv_lmfp/(Kinv_smfp+Kinv_lmfp),
+    # whose tails are O(Kn_loc²) on BOTH sides (Burnett-consistent) while the
+    # crossover depth is set independently by c. c = 2(2^{1/p} − 2) ≈ 4.229
+    # reproduces the p = 0.49 resistivity exactly at Kinv_smfp = Kinv_lmfp.
+    # Default 0 keeps the soft-min.
+    cross_c::Float64 = 0.0
     # K_p prefactors (Eq. K_p): K_p = K_p_prefactor * v2^(n/2), with
     # K_p ∝ Γ((n+p+3)/2), for the power-law cross section σ = σ0 (v/w)^n.
     # K5 reproduces the previous `f_k5_prefactor` exactly.

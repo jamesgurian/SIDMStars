@@ -38,8 +38,13 @@ end
         βt = run_params.sonine_blend * ki_l / ki_s1
         ki_s = ki_s1 * (k2 + βt * k5) / (k5 * (1 + βt))
     end
-    p = run_params.blend_p
-    k_tot = 1. / (ki_s^p + ki_l^p)^(1. / p)
+    if run_params.cross_c > 0
+        # Depth-matched cross-term form (see common.jl): O(Kn²) tails both sides.
+        k_tot = 1. / (ki_s + ki_l + run_params.cross_c * ki_s * ki_l / (ki_s + ki_l))
+    else
+        p = run_params.blend_p
+        k_tot = 1. / (ki_s^p + ki_l^p)^(1. / p)
+    end
     return k_tot
 end
 
