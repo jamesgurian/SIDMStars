@@ -143,7 +143,7 @@ end
 
 function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
 
-
+ 
 
     Q_center = calc_Q!(state, run_params)
 
@@ -184,7 +184,7 @@ function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
         state.r_center[i] = exp(sol(state.logm_center[i])[1])
         state.P_center[i] = exp(sol(state.logm_center[i])[2])
     end
-    for i in eachindex(state.logm_face)
+    for i in eachindex(state.logm_face)[2:end]
         state.r_face[i] = exp(sol(state.logm_face[i])[1])
     end
 
@@ -250,7 +250,7 @@ end
 function explicit_dsdt_conduction!(state::GridState, G, eps_diff, run_params)
     
     # Calculate derived center variables
-    @turbo for i in eachindex(state.P_center)
+    @inbounds @fastmath @simd for i in eachindex(state.P_center)
         P_c = state.P_center[i]
         s_c = state.s_center[i]
         
@@ -286,7 +286,6 @@ function explicit_dsdt_conduction!(state::GridState, G, eps_diff, run_params)
         
 
     slope_conduct2 = (state.dsdt_conduct[end-1] - state.dsdt_conduct[end-2])/log(state.dm_between_centers[end-1])
-    #state.dsdt_conduct[end] = 0.
     state.dsdt_conduct[end-1] + slope_conduct2 * log(state.dm_between_centers[end])
 
     state.dt_diff_array .= state.dm_between_centers .^2 ./ state.prefactor_face
@@ -326,8 +325,11 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     sol, logP_core, ρ_core, abstol, reltol, E_core, dE_implied =
         hse_update!(state, logP_core, s_interp, E_core, G, abstol, reltol)
     
-    dt_diffusion = explicit_dsdt_conduction!(state,  G, eps_diff, run_params)
-    snap_idx = 1
+    
+        dt_diffusion = explicit_dsdt_conduction!(state,  G, eps_diff, run_params)
+    #update_grid!(state, s_interp, sol, gridpoints, run_params)
+
+        snap_idx = 1
     if !isinf(run_params.snap_interval_time)
         write_snapshot!(run_params.snap_loc, snap_idx, t, state)
     end
@@ -372,12 +374,12 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         dlogp_core = logP_core - logP_core_old
         logP_guess = log(state.P_center[1]) + dlogp_core
         logP_core_old = logP_core 
-        
         sol, logP_core, ρ_core, abstol, reltol, E_core, dE_implied =
             hse_update!(state, logP_guess, s_interp, E_core, G, abstol, reltol)
         state.L_face[1] =  dE_implied/t_sub
         convect!(s_interp, state.s_center, state.v2_center, state.m_center, run_params)
-     
+       # update_grid!(state, s_interp, sol, gridpoints, run_params)
+
         v2_esc_surface = 2 * (G * state.M_tot[]) / state.r_face[end] # neglecting the mass exterior to the integration region
         v2_esc_core = 2 * sol[end][3]
         vrange = exp.(range(log(sqrt(v2_esc_surface)), stop=log(sqrt(2*v2_esc_core)),length=velocity_bins))

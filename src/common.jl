@@ -28,7 +28,28 @@ struct EvaporationOff <: EvaporationMode end
     snap_loc::String
     collapse_density_factor::Float64 = Inf
     collapse_mass_frac::Float64 = 0.0
-    f_k5_prefactor::Float64 = ((1/3) * 2^(n-1) * gamma(n/2 + 4)) / (w^n)
+    # Sonine (Chapman–Cowling) approximation order for the SMFP conductivity:
+    # 1 → [κ]₁, K_eff = K5 only; 2 → [κ]₂, K_eff^(2) of Eq. (k_secondorder).
+    sonine_order::Int64 = 2
+    # Knudsen damping of the second-order Sonine correction (active only when
+    # sonine_order == 2). With t = Kinv_lmfp/Kinv_smfp^(1) ∝ Kn_loc²,
+    #   K_eff = (K_eff^(2) + β t K5) / (1 + β t),  β = sonine_blend.
+    # β = 0 (default) keeps the pure second-order coefficient at all Kn;
+    # β > 0 recovers K_eff^(2) as Kn→0 (Chapman–Enskog asymptote, errors O(Kn²))
+    # and relaxes to K5 in the crossover, matching the K5-based LMFP branch.
+    sonine_blend::Float64 = 0.0
+    # Exponent of the LMFP/SMFP resistivity soft-min (Eq. kappa_interp):
+    #   1/κ = (Kinv_smfp^p + Kinv_lmfp^p)^(1/p),  p = blend_p.
+    # p = 0.49 is the fitted crossover value; its SMFP-side tail is a
+    # first-order-in-Kn deficit ≈ (1/p) Kn_loc^{2p}. p = 1 (harmonic sum)
+    # gives the Burnett-consistent O(Kn_loc²) tail instead.
+    blend_p::Float64 = 0.49
+    # K_p prefactors (Eq. K_p): K_p = K_p_prefactor * v2^(n/2), with
+    # K_p ∝ Γ((n+p+3)/2), for the power-law cross section σ = σ0 (v/w)^n.
+    # K5 reproduces the previous `f_k5_prefactor` exactly.
+    K5_prefactor::Float64 = ((1/3)  * 2^(n-1) * gamma(n/2 + 4)) / (w^n)
+    K7_prefactor::Float64 = ((1/12) * 2^(n-1) * gamma(n/2 + 5)) / (w^n)
+    K9_prefactor::Float64 = ((1/60) * 2^(n-1) * gamma(n/2 + 6)) / (w^n)
 end
 
 struct CompositeODESolution{T, U, S1, S2}

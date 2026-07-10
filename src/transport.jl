@@ -1,21 +1,45 @@
-f_k5(v2, run_params) = run_params.f_k5_prefactor * v2^(run_params.n / 2)
+K5(v2, run_params) = run_params.K5_prefactor * v2^(run_params.n / 2)
+K7(v2, run_params) = run_params.K7_prefactor * v2^(run_params.n / 2)
+K9(v2, run_params) = run_params.K9_prefactor * v2^(run_params.n / 2)
 
-function Kinv_smfp(v2, run_params) 
-    b = 25 * sqrt(pi)/32 
-    run_params.σ0 * f_k5(v2, run_params) / (b * sqrt(v2)) 
+# Second-order Chapman-Enskog SMFP conductivity factor (Eq. k_secondorder):
+#   K_eff^(2) = (28 K5^2 + 80 K5 K9 - 64 K7^2) / (77 K5 - 112 K7 + 80 K9)
+function Keff2(v2, run_params)
+    k5 = K5(v2, run_params); k7 = K7(v2, run_params); k9 = K9(v2, run_params)
+    (28*k5^2 + 80*k5*k9 - 64*k7^2) / (77*k5 - 112*k7 + 80*k9)
+end
+
+# SMFP: κ_SMFP = (3/2)(b v / σ0) / K_eff   (Eq. kappa_smfp, b = 25√π/32),
+# with K_eff = K5 (first Sonine approximation) or K_eff^(2) (second, Eq. k_secondorder)
+# selected by run_params.sonine_order.
+function Kinv_smfp(v2, run_params)
+    b = 25 * sqrt(pi)/32
+    keff = run_params.sonine_order == 1 ? K5(v2, run_params) : Keff2(v2, run_params)
+    run_params.σ0 * keff / (b * sqrt(v2))
 end
 
 
+# LMFP: κ_LMFP uses K5 (Eq. kappa_lmfp), a = 4/√π
 function Kinv_lmfp(v2, ρ, run_params,G)
     a = 4/sqrt(pi)
-    4 * pi * G / ( a * run_params.C * ρ * sqrt(v2)^3 * run_params.σ0 * f_k5(v2,run_params))
+    4 * pi * G / ( a * run_params.C * ρ * sqrt(v2)^3 * run_params.σ0 * K5(v2,run_params))
 end
 
-function calc_κ(P, s, run_params, G)
+@inline function calc_κ(P, s, run_params, G)
     ρ = P^(3/5) * exp(-2s/5)
     v2 = P/ρ
-    k_tot = 1. / (Kinv_smfp(v2, run_params)^(0.49) + Kinv_lmfp(v2, ρ, run_params, G)^(0.49
-    )).^(1. ./ 0.49)
+    ki_s = Kinv_smfp(v2, run_params)
+    ki_l = Kinv_lmfp(v2, ρ, run_params, G)
+    if run_params.sonine_order == 2 && run_params.sonine_blend > 0
+        # Knudsen-damped second-order correction: blend K_eff^(2) → K5 with
+        # weight β t, t = Kinv_lmfp/Kinv_smfp^(1) ∝ Kn_loc² (see common.jl).
+        k5 = K5(v2, run_params); k2 = Keff2(v2, run_params)
+        ki_s1 = ki_s * k5 / k2            # K5-based SMFP resistivity
+        βt = run_params.sonine_blend * ki_l / ki_s1
+        ki_s = ki_s1 * (k2 + βt * k5) / (k5 * (1 + βt))
+    end
+    p = run_params.blend_p
+    k_tot = 1. / (ki_s^p + ki_l^p)^(1. / p)
     return k_tot
 end
 
