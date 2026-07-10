@@ -104,18 +104,8 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
 
     prob = ODEProblem(hse_system_rho!, u0, M_span, ode_params)
     sol = solve(prob, reltol=1e-8)
-    v2_func(m) = sol(m)[2]/(rho_modified(sol(m)[1]))
 
-    dv2(m) = 1/rho_modified(sol(m)[1]) * sol(m, Val{1})[2] - 
-            sol(m)[2]/(4 * pi * sol(m)[1]^2 *rho_modified(sol(m)[1])^3) * ForwardDiff.derivative(rho_initial, sol(m)[1])
-    κ_func(m) = 1/ (Kinv_smfp(v2_func(m), run_params)^(1. ./ 3.) + 
-                    Kinv_lmfp(v2_func(m), rho_modified(sol(m)[1]), run_params,G)^(1. ./ 3.))^(3.)
-    L_func(m) = -(16 * pi^2 * (sol(m)[1])^4 * 
-                    rho_modified(sol(m)[1])* 
-                    κ_func(m) *dv2(m)) 
-
-    s_func(m) = log(sol(m)[2]^(3/2)/rho_modified(sol(m)[1])^(5/2)) 
-    dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
+    s_func(m) = log(sol(m)[2]^(3/2)/rho_modified(sol(m)[1])^(5/2))
     return sol, s_func, M_tot
 end
 
@@ -155,53 +145,7 @@ function initialize_profile(run_params, rho_initial, M_min, M_tot; p_outer=1e-10
 
     prob = ODEProblem(hse_system_rho, u0, M_span, ode_params)
     sol = solve(prob, reltol=1e-8)
-    v2_func(m) = sol(m)[2]/(rho_modified(sol(m)[1]))
 
-    dv2(m) = 1/rho_modified(sol(m)[1]) * sol(m, Val{1})[2] - 
-            sol(m)[2]/(4 * pi * sol(m)[1]^2 *rho_modified(sol(m)[1])^3) * ForwardDiff.derivative(rho_initial, sol(m)[1])
-    κ_func(m) = 1/ (Kinv_smfp(v2_func(m), run_params)^(1. ./ 3.) + 
-                    Kinv_lmfp(v2_func(m), rho_modified(sol(m)[1]), run_params,G)^(1. ./ 3.))^(3.)
-    L_func(m) = -(16 * pi^2 * (sol(m)[1])^4 * 
-                    rho_modified(sol(m)[1])* 
-                    κ_func(m) *dv2(m)) 
-
-    s_func(m) = log(sol(m)[2]^(3/2)/rho_modified(sol(m)[1])^(5/2)) 
-    dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
+    s_func(m) = log(sol(m)[2]^(3/2)/rho_modified(sol(m)[1])^(5/2))
     return sol, s_func
 end
-#=
-function initialize_profile(run_params, rho_initial, M_tot; p_outer=1e-10, mass_min_frac=1e-7)
-    # Setup a Radial Grid 
-    # Integrate Mass Outwards 
-    # dM = 4 * pi * r^2 * ρ * dr
-    M_span = ((M_tot),(mass_min_frac*M_tot/2)) 
-    function enclosed_mass(R)
-        integrand(r) = 4π * r^2 * rho_initial(r)
-        mass, error = quadgk(integrand, 0.0, R)
-        return mass
-    end
-    r_max = find_zero(x -> enclosed_mass(x) - M_tot, (run_params.r_min, run_params.r_max))
-    u0 = [r_max, (p_outer)]
-
-    G = run_params.G
-    ode_params = (ρ_func = rho_initial, 
-                    G = G)
-   
-    prob = ODEProblem(hse_system_rho!,u0, M_span, ode_params)
-
-    sol = solve(prob,reltol=1e-8)
-    v2_func(m) = sol(m)[2]/(rho_initial(sol(m)[1]))
-
-    dv2(m) = 1/rho_initial(sol(m)[1]) * sol(m, Val{1})[2] - 
-            sol(m)[2]/(4 * pi * sol(m)[1]^2 * rho_initial(sol(m)[1])^3) * ForwardDiff.derivative(rho_initial, sol(m)[1])
-    κ_func(m) = 1/ (Kinv_smfp(v2_func(m), run_params) + 
-                    Kinv_lmfp(v2_func(m), rho_initial(sol(m)[1]), run_params,G))
-    L_func(m) = -(16 * pi^2 * (sol(m)[1])^4 * 
-                    rho_initial(sol(m)[1])* 
-                    κ_func(m) *dv2(m)) 
-
-    s_func(m) = log(sol(m)[2]^(3/2)/rho_initial(sol(m)[1])^(5/2)) 
-    dsdt(m) = -ForwardDiff.derivative(L_func,m)/(v2_func(m))
-    
-    return sol, s_func
-end=#

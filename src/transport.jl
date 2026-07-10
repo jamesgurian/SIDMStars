@@ -9,13 +9,11 @@ function Keff2(v2, run_params)
     (28*k5^2 + 80*k5*k9 - 64*k7^2) / (77*k5 - 112*k7 + 80*k9)
 end
 
-# SMFP: κ_SMFP = (3/2)(b v / σ0) / K_eff   (Eq. kappa_smfp, b = 25√π/32),
-# with K_eff = K5 (first Sonine approximation) or K_eff^(2) (second, Eq. k_secondorder)
-# selected by run_params.sonine_order.
+# SMFP: κ_SMFP = (3/2)(b v / σ0) / K_eff^(2)   (Eq. kappa_smfp, b = 25√π/32),
+# second Sonine approximation (Eq. k_secondorder).
 function Kinv_smfp(v2, run_params)
     b = 25 * sqrt(pi)/32
-    keff = run_params.sonine_order == 1 ? K5(v2, run_params) : Keff2(v2, run_params)
-    run_params.σ0 * keff / (b * sqrt(v2))
+    run_params.σ0 * Keff2(v2, run_params) / (b * sqrt(v2))
 end
 
 
@@ -25,33 +23,27 @@ function Kinv_lmfp(v2, ρ, run_params,G)
     4 * pi * G / ( a * run_params.C * ρ * sqrt(v2)^3 * run_params.σ0 * K5(v2,run_params))
 end
 
-@inline function calc_κ(P, s, run_params, G)
-    ρ = P^(3/5) * exp(-2s/5)
-    v2 = P/ρ
-    ki_s = Kinv_smfp(v2, run_params)
-    ki_l = Kinv_lmfp(v2, ρ, run_params, G)
-    if run_params.sonine_order == 2 && run_params.sonine_blend > 0
-        # Knudsen-damped second-order correction: blend K_eff^(2) → K5 with
-        # weight β t, t = Kinv_lmfp/Kinv_smfp^(1) ∝ Kn_loc² (see common.jl).
-        k5 = K5(v2, run_params); k2 = Keff2(v2, run_params)
-        ki_s1 = ki_s * k5 / k2            # K5-based SMFP resistivity
-        βt = run_params.sonine_blend * ki_l / ki_s1
-        ki_s = ki_s1 * (k2 + βt * k5) / (k5 * (1 + βt))
-    end
-    if run_params.bump_A > 0
-        # Log-Gaussian resistivity bump on the harmonic sum (see common.jl):
-        # exact asymptotic branches on both sides, free depth/width.
-        u = log(ki_s / ki_l)
-        k_tot = 1. / ((ki_s + ki_l) *
-                      (1. + run_params.bump_A * exp(-u^2 / (2 * run_params.bump_W^2))))
-    elseif run_params.cross_c > 0
-        # Depth-matched cross-term form (see common.jl): O(Kn²) tails both sides.
-        k_tot = 1. / (ki_s + ki_l + run_params.cross_c * ki_s * ki_l / (ki_s + ki_l))
-    else
-        p = run_params.blend_p
-        k_tot = 1. / (ki_s^p + ki_l^p)^(1. / p)
-    end
-    return k_tot
+# Total conductivity: SMFP and LMFP branches joined by the log-Gaussian
+# resistivity bump measured from the DSMC heating trajectories (see common.jl),
+#   1/κ = (Kinv_smfp + Kinv_lmfp) · [1 + A exp(−u²/2W²)],  u = ln(Kinv_smfp/Kinv_lmfp).
+# Evaluated entirely in log space: both branch resistivities are power laws in
+# (ρ, v²), so with the coefficients precomputed in RunParams
+#   ln Kinv_smfp = lci_s + (n−1)/2 · ln v²
+#   ln Kinv_lmfp = lci_l − ln ρ − (n+3)/2 · ln v²
+# and u is their difference — no log or pow in the kernel, just three exp.
+@inline function calc_κ_log(lρ, lv2, run_params)
+    lki_s = run_params.lci_s + 0.5 * (run_params.n - 1) * lv2
+    lki_l = run_params.lci_l - lρ - 0.5 * (run_params.n + 3) * lv2
+    u = lki_s - lki_l
+    return 1.0 / ((exp(lki_s) + exp(lki_l)) *
+                  (1.0 + run_params.bump_A * exp(-u * u * run_params.inv2W2)))
+end
+
+# Value-space wrapper: ln ρ = (3/5)ln P − (2/5)s, ln v² = (2/5)(ln P + s).
+# The hot loop in evolve.jl calls calc_κ_log directly with logs it already has.
+@inline function calc_κ(P, s, run_params)
+    lP = log(P)
+    calc_κ_log(0.6 * lP - 0.4 * s, 0.4 * (lP + s), run_params)
 end
 
 struct EvaporationParams{T,U,V,W}

@@ -249,16 +249,19 @@ end
 
 function explicit_dsdt_conduction!(state::GridState, G, eps_diff, run_params)
     
-    # Calculate derived center variables
+    # Calculate derived center variables; one log(P) feeds ρ, v² and κ
     @inbounds @fastmath @simd for i in eachindex(state.P_center)
         P_c = state.P_center[i]
         s_c = state.s_center[i]
-        
-        ρ_c = P_c^(3/5) * exp(-2 * s_c / 5)
-        
+
+        lP  = log(P_c)
+        lρ  = 0.6 * lP - 0.4 * s_c
+        lv2 = 0.4 * (lP + s_c)
+        ρ_c = exp(lρ)
+
         state.ρ_center[i] = ρ_c
         state.v2_center[i] = P_c / ρ_c
-        state.κ_center[i] = calc_κ(P_c, s_c, run_params, G)
+        state.κ_center[i] = calc_κ_log(lρ, lv2, run_params)
     end
    
    

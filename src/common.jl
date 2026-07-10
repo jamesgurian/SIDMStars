@@ -15,7 +15,9 @@ struct EvaporationOff <: EvaporationMode end
     convection::TConv = ConvectionOn()
     evaporation::TEvap = EvaporationOn()
     G::Float64
-    C::Float64 
+    # LMFP conductivity calibration constant, measured jointly with the
+    # crossover bump below (fit_kappa_local.jl).
+    C::Float64 = 0.8620
     σ0::Float64
     w::Float64
     n::Float64
@@ -28,47 +30,35 @@ struct EvaporationOff <: EvaporationMode end
     snap_loc::String
     collapse_density_factor::Float64 = Inf
     collapse_mass_frac::Float64 = 0.0
-    # Sonine (Chapman–Cowling) approximation order for the SMFP conductivity:
-    # 1 → [κ]₁, K_eff = K5 only; 2 → [κ]₂, K_eff^(2) of Eq. (k_secondorder).
-    sonine_order::Int64 = 2
-    # Knudsen damping of the second-order Sonine correction (active only when
-    # sonine_order == 2). With t = Kinv_lmfp/Kinv_smfp^(1) ∝ Kn_loc²,
-    #   K_eff = (K_eff^(2) + β t K5) / (1 + β t),  β = sonine_blend.
-    # β = 0 (default) keeps the pure second-order coefficient at all Kn;
-    # β > 0 recovers K_eff^(2) as Kn→0 (Chapman–Enskog asymptote, errors O(Kn²))
-    # and relaxes to K5 in the crossover, matching the K5-based LMFP branch.
-    sonine_blend::Float64 = 0.0
-    # Exponent of the LMFP/SMFP resistivity soft-min (Eq. kappa_interp):
-    #   1/κ = (Kinv_smfp^p + Kinv_lmfp^p)^(1/p),  p = blend_p.
-    # p = 0.49 is the fitted crossover value; its SMFP-side tail is a
-    # first-order-in-Kn deficit ≈ (1/p) Kn_loc^{2p}. p = 1 (harmonic sum)
-    # gives the Burnett-consistent O(Kn_loc²) tail instead.
-    blend_p::Float64 = 0.49
-    # Cross-term crossover form (smfp_drift_note, Outlook): if cross_c > 0 it
-    # replaces the blend_p soft-min with the depth-matched harmonic sum
-    #   1/κ = Kinv_smfp + Kinv_lmfp + c · Kinv_smfp·Kinv_lmfp/(Kinv_smfp+Kinv_lmfp),
-    # whose tails are O(Kn_loc²) on BOTH sides (Burnett-consistent) while the
-    # crossover depth is set independently by c. c = 2(2^{1/p} − 2) ≈ 4.229
-    # reproduces the p = 0.49 resistivity exactly at Kinv_smfp = Kinv_lmfp.
-    # Default 0 keeps the soft-min.
-    cross_c::Float64 = 0.0
-    # Log-Gaussian resistivity bump on the harmonic sum (fit_bump.jl): if
-    # bump_A > 0 it takes precedence over cross_c/blend_p,
+    # Conductivity crossover: log-Gaussian resistivity bump on the sum of the
+    # branch resistivities (the single form; see calc_κ in transport.jl),
     #   1/κ = (Kinv_smfp + Kinv_lmfp) · [1 + A exp(−u²/2W²)],
     #   u = ln(Kinv_smfp/Kinv_lmfp).
     # The bump dies super-polynomially, so both tails are exactly the
-    # asymptotic branches (SMFP side Burnett-consistent O(Kn_loc²)), while the
-    # crossover depth A and log-width W are free. t-space fit to the 1e7
-    # constant-σ DSMC points (center pinned at branch equality):
-    # (A, W) = (0.9166 ± 0.052, 2.2299 ± 0.122), rms 0.006 dex.
-    bump_A::Float64 = 0.0
-    bump_W::Float64 = 2.2299
+    # asymptotic branches (SMFP side Burnett-consistent O(Kn_loc²)).
+    # Defaults are the LOCAL values measured from the DSMC heating
+    # trajectories (fit_kappa_local.jl, jointly with C above):
+    # (A, W, C) = (1.2046 ± 0.039, 1.7499 ± 0.050, 0.8620 ± 0.026).
+    bump_A::Float64 = 1.2046
+    bump_W::Float64 = 1.7499
     # K_p prefactors (Eq. K_p): K_p = K_p_prefactor * v2^(n/2), with
     # K_p ∝ Γ((n+p+3)/2), for the power-law cross section σ = σ0 (v/w)^n.
     # K5 reproduces the previous `f_k5_prefactor` exactly.
     K5_prefactor::Float64 = ((1/3)  * 2^(n-1) * gamma(n/2 + 4)) / (w^n)
     K7_prefactor::Float64 = ((1/12) * 2^(n-1) * gamma(n/2 + 5)) / (w^n)
     K9_prefactor::Float64 = ((1/60) * 2^(n-1) * gamma(n/2 + 6)) / (w^n)
+    # Derived constants for the log-space calc_κ hot path. All K_p share the
+    # v2^(n/2) scaling, so K_eff^(2)(v2) = Keff2_prefactor · v2^(n/2) exactly
+    # (Eq. k_secondorder evaluated on the prefactors), and the branch
+    # resistivities are pure power laws:
+    #   Kinv_smfp = exp(lci_s + (n−1)/2 · ln v²)            b = 25√π/32
+    #   Kinv_lmfp = exp(lci_l − ln ρ − (n+3)/2 · ln v²)     a = 4/√π
+    Keff2_prefactor::Float64 = (28*K5_prefactor^2 + 80*K5_prefactor*K9_prefactor -
+                                64*K7_prefactor^2) /
+                               (77*K5_prefactor - 112*K7_prefactor + 80*K9_prefactor)
+    lci_s::Float64 = log(σ0 * Keff2_prefactor * 32 / (25 * sqrt(pi)))
+    lci_l::Float64 = log(pi^1.5 * G / (C * σ0 * K5_prefactor))
+    inv2W2::Float64 = 1 / (2 * bump_W^2)
 end
 
 struct CompositeODESolution{T, U, S1, S2}
