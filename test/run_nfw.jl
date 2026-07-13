@@ -4,7 +4,7 @@ using SIDMStars
 
 using QuadGK
     
-r_max = 100.
+r_max = 30.
 prof = x -> nfw_profile(1.18, 2.73e7,  x)
 
 
@@ -42,4 +42,4 @@ dm_params = RunParams(
 )
 #semilogx(sol[1].t, sol[2].(sol[1].t))
 #savefig("out.png")
-sol = evolve(dm_params, prof,eps_kh=.05, eps_diff=0.2, mass_min_frac=1e-4, p_outer=P_surf);
+sol = evolve(dm_params, prof,eps_kh=.05, eps_diff=0.2, mass_min_frac=1e-6, p_outer=P_surf);
