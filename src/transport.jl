@@ -1,13 +1,35 @@
-K5(v2, run_params) = run_params.K5_prefactor * v2^(run_params.n / 2)
-K7(v2, run_params) = run_params.K7_prefactor * v2^(run_params.n / 2)
-K9(v2, run_params) = run_params.K9_prefactor * v2^(run_params.n / 2)
+# K5/K7/K9/Keff2 dispatch on the cross section carried in RunParams (see the
+# CrossSection hierarchy in common.jl). The (v2, run_params) signatures are
+# kept so existing analysis scripts continue to work unchanged.
+K5(v2, run_params::RunParams) = K5(v2, run_params.cs)
+K7(v2, run_params::RunParams) = K7(v2, run_params.cs)
+K9(v2, run_params::RunParams) = K9(v2, run_params.cs)
+Keff2(v2, run_params::RunParams) = Keff2(v2, run_params.cs)
+
+# PowerLawCS: closed-form K_p = K_p_prefactor * v2^(n/2), K_p ∝ Γ((n+p+3)/2),
+# for the power-law cross section σ = σ0 (v/w)^n (Eq. K_p). Recomputed from
+# (σ0, w, n) each call — same deterministic arithmetic as the old cached
+# RunParams.K5_prefactor·v2^(n/2), so results are bitwise identical to before.
+K5(v2, cs::PowerLawCS) = ((1/3)  * 2^(cs.n-1) * gamma(cs.n/2 + 4) / cs.w^cs.n) * v2^(cs.n/2)
+K7(v2, cs::PowerLawCS) = ((1/12) * 2^(cs.n-1) * gamma(cs.n/2 + 5) / cs.w^cs.n) * v2^(cs.n/2)
+K9(v2, cs::PowerLawCS) = ((1/60) * 2^(cs.n-1) * gamma(cs.n/2 + 6) / cs.w^cs.n) * v2^(cs.n/2)
+
+# InterpolatedCS: K5 is an O(1) table lookup (the hot-path quantity); K7/K9
+# aren't cached (nothing downstream needs them individually) so fall back to
+# direct quadrature of the generic moment (Eq. K_p, common.jl).
+K5(v2, cs::InterpolatedCS) = exp(lookup(cs.logK5, log(v2)))
+K7(v2, cs::InterpolatedCS) = _moment(cs.σ̂, v2, 9, 1/12)
+K9(v2, cs::InterpolatedCS) = _moment(cs.σ̂, v2, 11, 1/60)
 
 # Second-order Chapman-Enskog SMFP conductivity factor (Eq. k_secondorder):
 #   K_eff^(2) = (28 K5^2 + 80 K5 K9 - 64 K7^2) / (77 K5 - 112 K7 + 80 K9)
-function Keff2(v2, run_params)
-    k5 = K5(v2, run_params); k7 = K7(v2, run_params); k9 = K9(v2, run_params)
+# Generic fallback (valid for any σ, PowerLawCS included); InterpolatedCS
+# overrides it below with a direct table lookup (avoids recomputing K7/K9).
+function Keff2(v2, cs::CrossSection)
+    k5 = K5(v2, cs); k7 = K7(v2, cs); k9 = K9(v2, cs)
     (28*k5^2 + 80*k5*k9 - 64*k7^2) / (77*k5 - 112*k7 + 80*k9)
 end
+Keff2(v2, cs::InterpolatedCS) = exp(lookup(cs.logKeff2, log(v2)))
 
 # SMFP: κ_SMFP = (3/2)(b v / σ0) / K_eff^(2)   (Eq. kappa_smfp, b = 25√π/32),
 # second Sonine approximation (Eq. k_secondorder).
@@ -26,14 +48,28 @@ end
 # Total conductivity: SMFP and LMFP branches joined by the log-Gaussian
 # resistivity bump measured from the DSMC heating trajectories (see common.jl),
 #   1/κ = (Kinv_smfp + Kinv_lmfp) · [1 + A exp(−u²/2W²)],  u = ln(Kinv_smfp/Kinv_lmfp).
-# Evaluated entirely in log space: both branch resistivities are power laws in
-# (ρ, v²), so with the coefficients precomputed in RunParams
+# Evaluated entirely in log space. Dispatches on rp.cs: the PowerLawCS method
+# is the hot path (both branch resistivities are power laws in (ρ, v²), so
+# with the coefficients precomputed in RunParams no log or pow is needed in
+# the kernel, just three exp); the InterpolatedCS method reads K5/K_eff^(2)
+# off the precomputed tables instead of closed-form prefactors.
+calc_κ_log(lρ, lv2, run_params) = calc_κ_log(lρ, lv2, run_params.cs, run_params)
+
 #   ln Kinv_smfp = lci_s + (n−1)/2 · ln v²
 #   ln Kinv_lmfp = lci_l − ln ρ − (n+3)/2 · ln v²
-# and u is their difference — no log or pow in the kernel, just three exp.
-@inline function calc_κ_log(lρ, lv2, run_params)
+@inline function calc_κ_log(lρ, lv2, ::PowerLawCS, run_params)
     lki_s = run_params.lci_s + 0.5 * (run_params.n - 1) * lv2
     lki_l = run_params.lci_l - lρ - 0.5 * (run_params.n + 3) * lv2
+    u = lki_s - lki_l
+    return 1.0 / ((exp(lki_s) + exp(lki_l)) *
+                  (1.0 + run_params.bump_A * exp(-u * u * run_params.inv2W2)))
+end
+
+#   ln Kinv_smfp = lb_s + ln K_eff^(2)(v²) − (1/2) ln v²
+#   ln Kinv_lmfp = lb_l − ln ρ − (3/2) ln v² − ln K5(v²)
+@inline function calc_κ_log(lρ, lv2, cs::InterpolatedCS, run_params)
+    lki_s = run_params.lb_s + lookup(cs.logKeff2, lv2) - 0.5 * lv2
+    lki_l = run_params.lb_l - lρ - 1.5 * lv2 - lookup(cs.logK5, lv2)
     u = lki_s - lki_l
     return 1.0 / ((exp(lki_s) + exp(lki_l)) *
                   (1.0 + run_params.bump_A * exp(-u * u * run_params.inv2W2)))
@@ -70,7 +106,7 @@ function evaporation_integral!(du, u, p, logm)
     v2_local = P/ρ
     v2_rel = v2_part + 3*v2_local
     dr_dlogm = m/(4 * pi * r^2 * ρ)
-    sigma = p.run_params.σ0 * (sqrt(v2_rel) / p.run_params.w)^p.run_params.n
+    sigma = σ_at_v2(p.run_params.cs, v2_rel)
     du[1] = -sigma * ρ * dr_dlogm
     shared_integrand = pi * r^2 * ρ *  du[1] *exp(-τ) 
 

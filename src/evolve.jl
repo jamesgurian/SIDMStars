@@ -299,6 +299,19 @@ function explicit_dsdt_conduction!(state::GridState, G, eps_diff, run_params)
 end
 
 function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,velocity_bins=50, abstol=1e-5, reltol=1e-5)
+    # Guard against the accidental converse of the InterpolatedCS n=NaN
+    # convention (common.jl): a PowerLawCS run must have a finite lci_s (i.e.
+    # a finite n), or calc_κ_log's hot path silently produces NaN conductivities.
+    if run_params.cs isa PowerLawCS && !isfinite(run_params.lci_s)
+        error("RunParams.cs isa PowerLawCS but lci_s is not finite (n was likely set to NaN). " *
+              "If you intended to use a non-power-law cross section, pass cs = RegularizedCS(σ0, w) (or another InterpolatedCS).")
+    end
+    # The legacy rp.σ0 field (Kinv_smfp/Kinv_lmfp, analysis scripts) and the
+    # normalization carried inside cs must agree, or those helpers silently
+    # disagree with the hot path and the evaporation integral.
+    if run_params.σ0 != run_params.cs.σ0
+        error("RunParams.σ0 = $(run_params.σ0) does not match run_params.cs.σ0 = $(run_params.cs.σ0).")
+    end
     gridpoints = run_params.gridpoints
 
     G = run_params.G

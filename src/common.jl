@@ -10,8 +10,114 @@ struct ConvectionOff <: ConvectionMode end
 
 struct EvaporationOn <: EvaporationMode end
 struct EvaporationOff <: EvaporationMode end
-@kwdef struct RunParams{TConv <: ConvectionMode, TEvap <: EvaporationMode}
- 
+
+# --- Cross-section type hierarchy -------------------------------------------
+# Carries σ(v) into RunParams via multiple dispatch. PowerLawCS reproduces the
+# original hardwired σ = σ0 (v/w)^n exactly (all existing calibrations —
+# C=0.8620, bump (A,W)=(1.2046,1.7499), the Ψ model — were measured against
+# it). InterpolatedCS supports an arbitrary normalized shape σ̂(v²)=σ(v)/σ0 by
+# precomputing log-log tables of the K5 and K_eff^(2) moments (the only two
+# the conductivity hot path needs) on a uniform grid in ln v², built once at
+# construction via QuadGK.
+abstract type CrossSection end
+
+@kwdef struct PowerLawCS <: CrossSection
+    σ0::Float64
+    w::Float64
+    n::Float64
+end
+
+# Uniform grid in ln v² with allocation-free O(1) lookup. Linear interpolation
+# between nodes; outside the grid range the last segment's slope is used
+# unmodified, i.e. plain linear extrapolation — exact for a shape whose tail
+# is locally a power law (as for the regularized cross section below).
+struct LogTable
+    lv2_min::Float64
+    inv_dl::Float64
+    vals::Vector{Float64}
+end
+
+function lookup(tbl::LogTable, lv2)
+    N = length(tbl.vals)
+    t = (lv2 - tbl.lv2_min) * tbl.inv_dl
+    i = clamp(floor(Int, t) + 1, 1, N - 1)
+    frac = t - (i - 1)
+    @inbounds return tbl.vals[i] + frac * (tbl.vals[i+1] - tbl.vals[i])
+end
+
+struct InterpolatedCS{F} <: CrossSection
+    σ̂::F                  # normalized shape σ̂(v²) = σ(v)/σ0, called with v² directly
+    σ0::Float64
+    logK5::LogTable        # ln K5        vs ln v²
+    logKeff2::LogTable     # ln K_eff^(2) vs ln v²
+end
+
+# Generic Maxwellian moments (Eq. K_p), verified analytically to reproduce the
+# power-law prefactors above exactly (Γ-functions and all):
+#   K_p(v2) = c_p ∫₀^∞ y^(p+2) e^(−y²) σ̂(4 v2 y²) dy,   (c5,c7,c9) = (1/3,1/12,1/60)
+# (the integrand argument 4·v2·y² is v² for v = 2√v2·y). K_eff^(2) is the same
+# rational combination of K5/K7/K9 as below (Eq. k_secondorder), valid for any σ.
+function _moment(σ̂, v2, p_pow, c_p)
+    integral, _ = quadgk(y -> y^p_pow * exp(-y^2) * σ̂(4 * v2 * y^2), 0, 8; rtol=1e-10)
+    return c_p * integral
+end
+
+# Constructor: builds ln K5 and ln K_eff^(2) tables on a uniform grid in ln v²
+# spanning `v2_center` ± `halfwidth_lv2` nats (default ±45 nats ≈ ±19.5 decades
+# each side). Cost is ~3·npoints smooth quadratures — a few seconds, once per run.
+function InterpolatedCS(σ̂::F, σ0::Real; v2_center::Real, halfwidth_lv2::Real=45.0,
+                         npoints::Integer=4096) where F
+    lv2_min = log(v2_center) - halfwidth_lv2
+    lv2_max = log(v2_center) + halfwidth_lv2
+    dl = (lv2_max - lv2_min) / (npoints - 1)
+    logK5_vals    = Vector{Float64}(undef, npoints)
+    logKeff2_vals = Vector{Float64}(undef, npoints)
+    for i in 1:npoints
+        lv2 = lv2_min + (i - 1) * dl
+        v2  = exp(lv2)
+        k5 = _moment(σ̂, v2, 7,  1/3)
+        k7 = _moment(σ̂, v2, 9,  1/12)
+        k9 = _moment(σ̂, v2, 11, 1/60)
+        # Second-order Chapman-Enskog denominator (Eq. k_secondorder); a
+        # non-positive value signals the second-Sonine approximation has
+        # broken down for this σ̂ at this v2.
+        denom = 77*k5 - 112*k7 + 80*k9
+        @assert denom > 0 "Keff2 denominator non-positive at lv2=$lv2 (second-Sonine breakdown)"
+        keff2 = (28*k5^2 + 80*k5*k9 - 64*k7^2) / denom
+        logK5_vals[i]    = log(k5)
+        logKeff2_vals[i] = log(keff2)
+    end
+    inv_dl = 1 / dl
+    logK5    = LogTable(lv2_min, inv_dl, logK5_vals)
+    logKeff2 = LogTable(lv2_min, inv_dl, logKeff2_vals)
+    return InterpolatedCS{F}(σ̂, Float64(σ0), logK5, logKeff2)
+end
+
+# Convenience: the regularized shape used by the companion DSMC simulations,
+#   σ̂(v²) = 1/(1+v²/w²)²,
+# with exact power-law tails (n=0 as v²→0, n=−4 as v²→∞), so log-log linear
+# extrapolation beyond the table is asymptotically exact.
+RegularizedCS(σ0::Real, w::Real) =
+    InterpolatedCS(v2 -> 1 / (1 + v2/w^2)^2, σ0; v2_center = w^2)
+
+# Direct σ(v) evaluation — used only by the evaporation integral (transport.jl).
+σ_at_v2(cs::PowerLawCS, v2) = cs.σ0 * (sqrt(v2) / cs.w)^cs.n
+σ_at_v2(cs::InterpolatedCS, v2) = cs.σ0 * cs.σ̂(v2)
+
+# Derived log-space constants for the InterpolatedCS calc_κ_log hot path
+# (transport.jl) — mirror lci_s/lci_l below, but with K5/K_eff^(2) read from
+# tables instead of closed-form power-law prefactors:
+#   ln Kinv_smfp = lb_s + ln K_eff^(2)(v²) − (1/2) ln v²        b = 25√π/32
+#   ln Kinv_lmfp = lb_l − ln ρ − (3/2) ln v² − ln K5(v²)        a = 4/√π
+# PowerLawCS doesn't use these (the power-law hot path reads lci_s/lci_l
+# directly); NaN here is unused, never read.
+smfp_logconst(cs::PowerLawCS) = NaN
+lmfp_logconst(cs::PowerLawCS, G, C) = NaN
+smfp_logconst(cs::InterpolatedCS) = log(cs.σ0 * 32 / (25 * sqrt(pi)))
+lmfp_logconst(cs::InterpolatedCS, G, C) = log(pi^1.5 * G / (C * cs.σ0))
+
+@kwdef struct RunParams{TConv <: ConvectionMode, TEvap <: EvaporationMode, TCS <: CrossSection}
+
     convection::TConv = ConvectionOn()
     evaporation::TEvap = EvaporationOn()
     G::Float64
@@ -21,6 +127,17 @@ struct EvaporationOff <: EvaporationMode end
     σ0::Float64
     w::Float64
     n::Float64
+    # Cross section carried via multiple dispatch (see CrossSection hierarchy
+    # above). Defaults to the power law σ = σ0 (v/w)^n built from σ0/w/n
+    # above, so existing keyword construction is unaffected. To use another
+    # shape (e.g. RegularizedCS(σ0, w)), pass cs= explicitly and set n = NaN
+    # (n then only propagates into the unused legacy prefactor/lci fields
+    # below; the interpolated path never reads them).
+    cs::TCS = PowerLawCS(σ0=σ0, w=w, n=n)
+    # Derived log-space constants for the InterpolatedCS calc_κ_log hot path
+    # (unused/NaN for PowerLawCS — see smfp_logconst/lmfp_logconst above).
+    lb_s::Float64 = smfp_logconst(cs)
+    lb_l::Float64 = lmfp_logconst(cs, G, C)
     t_end::Float64
     r_max::Float64
     r_min::Float64

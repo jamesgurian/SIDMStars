@@ -10,6 +10,9 @@ module SIDMStars
 using LinearAlgebra
 using LoopVectorization
 using DifferentialEquations
+# DifferentialEquations v8 no longer re-exports the solver algorithms;
+# Rodas5 (bvp.jl) now lives in the OrdinaryDiffEqRosenbrock sublibrary.
+using OrdinaryDiffEqRosenbrock
 using HDF5
 using ForwardDiff
 using DataInterpolations
@@ -46,6 +49,10 @@ module Constants
     end
 
 export RunParams
+export CrossSection
+export PowerLawCS
+export InterpolatedCS
+export RegularizedCS
 export ConvectionOn
 export ConvectionOff
 export EvaporationOff
