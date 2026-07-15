@@ -95,17 +95,16 @@ function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_fra
    # rho_modified(r) = r > r_core ? rho_initial(r) : rho_core
 
     # 5. Set up and solve the ODE using the modified density
-    M_span = (M_tot, M_target) 
-    u0 = [r_end, p_outer] 
+    M_span = (M_tot, M_target)
+    u0 = SVector(r_end, Float64(p_outer))
     G = run_params.G
 
-    # Pass our new rho_modified function instead of rho_initial
     ode_params = (ρ_func = rho_initial, G = G)
 
-    prob = ODEProblem(hse_system_rho!, u0, M_span, ode_params)
+    prob = ODEProblem(hse_system_rho, u0, M_span, ode_params)
     sol = solve(prob, reltol=1e-8)
 
-    s_func(m) = log(sol(m)[2]^(3/2)/rho_modified(sol(m)[1])^(5/2))
+    s_func(m) = log(sol(m)[2]^(3/2)/rho_initial(sol(m)[1])^(5/2))
     return sol, s_func, M_tot
 end
 

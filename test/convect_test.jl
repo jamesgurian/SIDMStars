@@ -2,6 +2,24 @@ using PyPlot
 using DataInterpolations
 using Printf
 using SIDMStars
+
+# convect! dispatches on run_params.convection (ConvectionOn/Off); only the
+# convection mode matters here, the rest of RunParams is unused by convect!.
+run_params = RunParams(
+    convection = ConvectionOn(),
+    G = 4.30091727003628e-6,
+    σ0 = 1e-6,
+    w = 10.,
+    n = 0.,
+    t_end = 1.,
+    r_max = 1.,
+    r_min = 1e-3,
+    gridpoints = 10,
+    snap_interval_time = Inf,
+    snap_interval_density = Inf,
+    snap_loc = "",
+)
+
 N = 200
 m = range(0.1, 1.0, length=N) # Mass coordinate
 s_rad = collect(m)            # Base stable profile (linear rise)
@@ -19,7 +37,7 @@ v2 = 1.0 ./ sqrt.(m)
 
 # D. Run Simulation
 s_final = copy(s_initial)
-SIDMStars.convect!(s_interp, s_final, v2, m)
+SIDMStars.convect!(s_interp, s_final, v2, m, run_params)
 
 # E. Verification (Conservation of Energy)
 # We compute \int (s_final - s_initial) * T * dm over the whole domain
@@ -38,7 +56,7 @@ s_interp_core = AkimaInterpolation(s_initial_core, log.(m))
 s_final_core = copy(s_initial_core)
 semilogx(m, s_initial_core)
 
-SIDMStars.convect!(s_interp_core, s_final_core, v2, m)
+SIDMStars.convect!(s_interp_core, s_final_core, v2, m, run_params)
 
 # Verify
 energy_diff_core = sum((s_final_core .- s_initial_core) .* v2 .* (vcat(0.0, diff(m))))
@@ -55,7 +73,7 @@ s_interp_surf = AkimaInterpolation(s_initial_surf, log.(m))
 s_final_surf = copy(s_initial_surf)
 semilogx(m, s_initial_surf)
 
-SIDMStars.convect!(s_interp_surf, s_final_surf, v2, m)
+SIDMStars.convect!(s_interp_surf, s_final_surf, v2, m, run_params)
 
 # Verify
 energy_diff_surf = sum((s_final_surf .- s_initial_surf) .* v2 .* (vcat(0.0, diff(m))))
