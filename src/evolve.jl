@@ -105,11 +105,14 @@ function calc_Q!(state, run_params::RunParams{ConvectionOn, T}) where T
 
     invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
 
-    s_norm = (state.s_center .- state.s_center[1]) ./ (state.s_center[end] - state.s_center[1])
+    # s is dropped from the monitor: convect! flattens the core to exact-constant
+    # entropy plateaus whose sharp inner edge makes the s-term near-discontinuous
+    # and drives a self-amplifying mesh-clustering runaway (points pile on the
+    # plateau edge, dt→0). Use the smooth r / log m / 1/P monitor (same form as
+    # the ConvectionOff branch below).
+    m_norm = (log.(state.m_center) .- log.(state.m_center[1])) ./ (log.(state.m_center[end]) - log.(state.m_center[1]))
 
-
-
-    Q_center = (0.45) .* (r_norm .+ s_norm  ) .+ 0.1 .* invP_norm
+    Q_center = (0.4) .* (r_norm .+ m_norm) .+ 0.2 .* invP_norm
 
 end
 
@@ -141,46 +144,77 @@ end
 
 
 
+# v²-weighted donor-cell (finite-volume) remap of specific entropy s from an old
+# mass grid onto a new one. Old cell i spans [mf_old[i], mf_old[i+1]] with
+# cell-centered v2_old[i], s_old[i]; new cell j spans [mf_new[j], mf_new[j+1]].
+# For each new cell, s_new[j] = (Σ_i A_ji v²_i s_i)/(Σ_i A_ji v²_i), A_ji = mass
+# overlap of new cell j with old cell i. This conserves ∫v²s dm AND ∫v² dm both
+# globally and per donor region, and s_new is a convex combination of the donor
+# s_i (bounded, monotone, no new extrema, no global correction). Both grids must
+# share endpoints mf_old[1]==mf_new[1], mf_old[end]==mf_new[end] and be sorted.
+function donor_remap_v2s!(s_new, mf_old, v2_old, s_old, mf_new)
+    n = length(s_old)                       # number of cells (= length(faces)-1)
+    i = 1                                    # running old-cell index
+    @inbounds for j in 1:n
+        lo_j = mf_new[j]; hi_j = mf_new[j+1]
+        # advance to the first old cell whose right face is beyond lo_j
+        while i < n && mf_old[i+1] <= lo_j
+            i += 1
+        end
+        acc_vs = 0.0; acc_v = 0.0
+        k = i
+        while k <= n && mf_old[k] < hi_j
+            ov = min(hi_j, mf_old[k+1]) - max(lo_j, mf_old[k])
+            if ov > 0.0
+                w = v2_old[k] * ov
+                acc_v  += w
+                acc_vs += w * s_old[k]
+            end
+            k += 1
+        end
+        # acc_v > 0 always (grids share endpoints); guard round-off gaps
+        s_new[j] = acc_v > 0.0 ? acc_vs / acc_v : s_old[min(i, n)]
+    end
+    return s_new
+end
+
 function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
-
- 
-
+    # Pick the new mass grid by equidistributing the refinement weight Q (which
+    # concentrates points where log r / s / 1/P vary rapidly, e.g. the migrating
+    # convective boundary). Q is built from the CURRENT (old-grid) state.
     Q_center = calc_Q!(state, run_params)
-
-    #so we interpolate in normalized logr and s to get our new mass grid
-
     logm_of_Q = PCHIPInterpolation(state.logm_center, Q_center)
-
     Q_range = collect(range(Q_center[1], stop = Q_center[end], length=gridpoints-1))
-
     logm_center_new = logm_of_Q(Q_range)
 
+    # Capture the OLD grid + fields before anything is overwritten in place.
+    mf_old = copy(state.m_face)
+    v2_old = copy(state.v2_center)
+    s_old  = copy(state.s_center)
 
+    # Build the NEW mass grid: centers, then faces as center midpoints with the
+    # inner/outer boundaries (M_min, M_tot) preserved exactly.
+    m_center_new = exp.(logm_center_new)
+    mf_new = similar(state.m_face)
+    mf_new[1]        = mf_old[1]
+    mf_new[end]      = mf_old[end]
+    mf_new[2:end-1] .= 0.5 .* (m_center_new[2:end] .+ m_center_new[1:end-1])
 
-    #and then update the state
+    # Conservative v²-weighted remap of s onto the new cells (helper above).
+    donor_remap_v2s!(state.s_center, mf_old, v2_old, s_old, mf_new)
 
-    state.s_center .= s_interp(logm_center_new)
-
-    state.logm_center .= logm_center_new
-
-    state.m_center .= exp.(state.logm_center)
-
-
-
-    state.m_face[2:end-1] .= 0.5 .* (state.m_center[2:end] .+ state.m_center[1:end-1])
-
-    state.logm_face .= log.(state.m_face)
-
-
-
+    # Commit the new grid geometry.
+    state.m_center .= m_center_new
+    state.m_face   .= mf_new
+    state.logm_center .= log.(state.m_center)
+    state.logm_face   .= log.(state.m_face)
     state.dm_cell .= diff(state.m_face)
-
     state.dm_between_centers .= diff(state.m_center)
 
-
-
+    # Resample the radial structure from the current HSE solution (sol returns
+    # log r, log P as functions of log m). r_face[1] is left to the next
+    # hse_update! (as in the static-grid path).
     for i in eachindex(state.logm_center)
-        
         state.r_center[i] = exp(sol(state.logm_center[i])[1])
         state.P_center[i] = exp(sol(state.logm_center[i])[2])
     end
@@ -188,15 +222,9 @@ function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
         state.r_face[i] = exp(sol(state.logm_face[i])[1])
     end
 
-    state.logm_center .= log.(state.m_center)
-
-    state.logm_face .= log.(state.m_face)
-
-
-
-    state.ρ_center  .= state.P_center.^(3/5) .* exp.(-2 .* state.s_center./ 5)
-
+    state.ρ_center  .= state.P_center.^(3/5) .* exp.(-2 .* state.s_center ./ 5)
     state.v2_center .= state.P_center ./ state.ρ_center
+    return state
 
 
 
@@ -213,6 +241,14 @@ function core_energy(P_c, ρ_c, r_c, r_min, m_f1, G)
     W1 = -(3/5)*G*m_f1^2/r_min
     return U1 + W1
 end
+
+# Entropy interpolant s(ln m) for the structure solve, convect! and evaporation.
+# PCHIPInterpolation computes its slopes once, in the constructor (cache_parameters only governs the
+# polynomial-coefficient cache), while u and t are stored by reference. An interpolant built directly
+# on s_center therefore follows later edits to the node values but keeps the slopes of the profile it
+# was built on. Build from copies, and rebuild whenever s_center or the mass grid changes.
+build_s_interp(s_center, logm_center) =
+    PCHIPInterpolation(copy(s_center), copy(logm_center), extrapolation = ExtrapolationType.Constant)
 
 function hse_update!(state::GridState, logP_guess, s_interp, E_old, G, abstol, reltol)
     ode_params = StructureParams(s_interp, G)
@@ -336,12 +372,12 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     t_prev_snap = 0.
     dt_diffusion= 0.
 
-    s_interp = PCHIPInterpolation(state.s_center, state.logm_center, extrapolation = ExtrapolationType.Constant)
+    s_interp = build_s_interp(state.s_center, state.logm_center)
     E_core = core_energy(state.P_center[1], state.ρ_center[1], state.r_center[1], state.r_face[1], state.m_face[1], G)
     sol, logP_core, ρ_core, abstol, reltol, E_core, dE_implied =
         hse_update!(state, logP_core, s_interp, E_core, G, abstol, reltol)
-    
-    
+
+
         dt_diffusion = explicit_dsdt_conduction!(state,  G, eps_diff, run_params)
     #update_grid!(state, s_interp, sol, gridpoints, run_params)
 
@@ -353,7 +389,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     logP_guess = log(state.P_center[1])
 
     while t < run_params.t_end
-    println("t:", t) 
+    println("t:", t)
         #The von Neumann Stability condition is very strict compared to the thermal timescale
         #and calculating the evaporation rate is relatively expensive
         #so we subscycle
@@ -389,12 +425,20 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         dt_kh = eps_kh *  min(minimum((abs.(1 ./ (state.dsdt_evap)))), minimum(abs.(1 ./state.dsdt_conduct)))
         dlogp_core = logP_core - logP_core_old
         logP_guess = log(state.P_center[1]) + dlogp_core
-        logP_core_old = logP_core 
+        logP_core_old = logP_core
+        # the conduction/evaporation substeps above changed s_center (and, with evaporation, the
+        # mass grid), so the structure solve needs an interpolant built on the current profile
+        s_interp = build_s_interp(state.s_center, state.logm_center)
         sol, logP_core, ρ_core, abstol, reltol, E_core, dE_implied =
             hse_update!(state, logP_guess, s_interp, E_core, G, abstol, reltol)
         state.L_face[1] =  dE_implied/t_sub
         convect!(s_interp, state.s_center, state.v2_center, state.m_center, run_params)
-       # update_grid!(state, s_interp, sol, gridpoints, run_params)
+        if run_params.regrid
+            update_grid!(state, s_interp, sol, gridpoints, run_params)
+        end
+        # convect! may have flattened s_center and update_grid! moves every node; rebuild before
+        # calc_evaporation reads the interpolant
+        s_interp = build_s_interp(state.s_center, state.logm_center)
 
         v2_esc_surface = 2 * (G * state.M_tot[]) / state.r_face[end] # neglecting the mass exterior to the integration region
         v2_esc_core = 2 * sol[end][3]

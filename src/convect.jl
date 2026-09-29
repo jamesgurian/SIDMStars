@@ -2,16 +2,34 @@
 function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParams{ConvectionOff, T}) where T
 end
 
+# Entropy dips no deeper than this (s is a logarithm) are round-off, not convective zones: conduction
+# leaves ~1e-10 wiggles on plateaus flattened at earlier steps, and flattening leaves edge residue at
+# the root-finder's precision. They are lifted to the preceding value instead of mixed.
+const DS_ROUNDOFF = 1e-9
+
+"Lift round-off-level dips (s[i] below s[i-1] by at most DS_ROUNDOFF) to the preceding value."
+function lift_roundoff_dips!(s_center)
+    for i in 2:length(s_center)
+        d = s_center[i-1] - s_center[i]
+        0 < d <= DS_ROUNDOFF && (s_center[i] = s_center[i-1])
+    end
+end
+
 function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParams{ConvectionOn, T}) where T
     #while there is a negative entropy gradient
 
-    diff(s_center)
+    lift_roundoff_dips!(s_center)
     while !issorted(s_center)
-        #find the first region 
+        #find the first region
         println("convection")
        # semilogx(m_center, s_center)
         lower_idx, peak_idx, valley_idx, upper_idx = find_convective_zone(s_center)
-        adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, peak_idx, valley_idx, upper_idx)
+        # adjust_entropy! root-finds on the interpolant, so it must see the CURRENT s: the passed-in
+        # s_interp predates this call, and every earlier pass of this loop has flattened s_center
+        s_now = build_s_interp(s_center, log.(m_center))
+        adjust_entropy!(s_now, s_center, v2_center, m_center, lower_idx, peak_idx, valley_idx, upper_idx)
+        # the flattened zone's edges match the plateau only to root-finder precision; clear any residue
+        lift_roundoff_dips!(s_center)
     end
 end
 
@@ -65,64 +83,53 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
     logm_valley = log(m_center[valley_idx]) #the mass at the minimum
     logm_peak = log(m_center[peak_idx])
     logm_upper = log(m_center[upper_idx])
-    m_range = (m_center[lower_idx:upper_idx])
-    logm_range = log.(m_range)
-    v2_range = v2_center[lower_idx:upper_idx]
-    s_range = s_center[lower_idx:upper_idx]
+    logm_lower = log(m_center[lower_idx])
+    s_peak = s_center[peak_idx]
+    s_valley = s_center[valley_idx]
 
-    #pre compute the defect integrals
-    CDF_v2 = cumul_integrate(m_range, v2_range) #\int_{m_l}^{m_h} v2 dM
-    CDF_v2_interp = LinearInterpolation(CDF_v2, logm_range)
-
-    CDF_sv2 = cumul_integrate(m_range, s_range  .* v2_range)#\int_{m_l}^{m_h} s v2 dM
-    CDF_sv2_interp = LinearInterpolation(CDF_sv2, logm_range)
-
-    #
-    tol = 1e-5
-    max_iters=100
-    s_current =  s_center[peak_idx] - 1e-4 * s_center[peak_idx]
-    logm_a = log(m_center[lower_idx]) #the lower bound on m_a 
-    logm_b =log(m_center[upper_idx]) #the upper bound on m_b
-    logm_lower = logm_a
-    logm_upper = logm_b
-    for _ in 1:max_iters
-        objective(logm) = s_interp(logm) - s_current
-        
-        #we first find m_a and m_b by enforcing continuity on s
-       
-        
-        if (s_interp(logm_lower)  < s_current < s_interp(logm_peak))  && (lower_idx < peak_idx) #if we actually have a bracketing interval
-            logm_a = find_zero(objective, (logm_lower, logm_peak))
-        else
-
-            logm_a = logm_lower
-        end
-
-        if (s_interp(logm_upper) > s_current > s_interp(logm_valley)) && (upper_idx > valley_idx)
-            logm_b = find_zero(objective, (logm_valley, logm_upper))
-        else
-            logm_b = logm_upper
-        end
-
-        #now we calculate the energy residual
-        int_v2_dm = (CDF_v2_interp(logm_b) - CDF_v2_interp(logm_a))
-        int_s_v2_dm = (CDF_sv2_interp(logm_b) - CDF_sv2_interp(logm_a))
-        residual = s_current * int_v2_dm  - int_s_v2_dm
-        #and take a newton step
-        delta_s =  residual / int_v2_dm
-        s_current -= delta_s
-        #and check for convergence
-        if residual/int_s_v2_dm < tol
-            idx_a = searchsortedfirst(m_center, exp(logm_a))
-            idx_b = searchsortedlast(m_center, exp(logm_b))
-            
-            # Flatten the profile
-            s_center[idx_a:idx_b] .= s_current
-            return 
-
-        end
+    # continuity points m_a (rising branch below the peak) and m_b (rising branch above the valley)
+    # where the unmixed profile equals the plateau value s; fall back to the bracket ends
+    function zone_edges(s)
+        objective(logm) = s_interp(logm) - s
+        logm_a = (s_interp(logm_lower) < s < s_interp(logm_peak)) && (lower_idx < peak_idx) ?
+            find_zero(objective, (logm_lower, logm_peak)) : logm_lower
+        logm_b = (s_interp(logm_upper) > s > s_interp(logm_valley)) && (upper_idx > valley_idx) ?
+            find_zero(objective, (logm_valley, logm_upper)) : logm_upper
+        return logm_a, logm_b
     end
+    # Cell masses (faces are midpoints of the centres; the two end cells are taken symmetric). The
+    # energy is measured on exactly the cells that get flattened, so the invariant sum v² s dm is the
+    # one conserved. (Integrating to the continuity points by linearly interpolating cumulative
+    # trapezoid integrals instead pulls in the next node's s across a partial cell; for 2-3 cell
+    # zones that flips the sign the bracket below relies on.)
+    n = length(m_center)
+    w = [i == 1 ? m_center[2] - m_center[1] : i == n ? m_center[n] - m_center[n-1] :
+         0.5 * (m_center[i+1] - m_center[i-1]) for i in 1:n]
+    flattened_cells(s) = begin
+        logm_a, logm_b = zone_edges(s)
+        searchsortedfirst(m_center, exp(logm_a)):searchsortedlast(m_center, exp(logm_b))
+    end
+    # heat defect of flattening those cells to s: sum w v² (s - s_i)  (zero = energy conserved)
+    energy_residual(s) = sum(w[i] * v2_center[i] * (s - s_center[i]) for i in flattened_cells(s))
 
-error("Convective adjustment failed to converge")
+    # The plateau lies between the local minimum and maximum, and the residual changes sign across
+    # [s_valley, s_peak] (<= 0 at the valley, >= 0 at the peak), so bracket it. A Newton iteration
+    # here is not safe: the continuity points jump between a root and a bracket end whenever the
+    # iterate crosses s_peak or s_valley, the residual is discontinuous there, and for shallow
+    # inversions Newton cycles; the old relative stopping test (no abs, |s| scale) hid that.
+    r_valley = energy_residual(s_valley)
+    r_peak = energy_residual(s_peak)
+    if !(r_valley <= 0 <= r_peak)
+        error("Convective adjustment: energy residual does not bracket a root on [s_valley, s_peak] " *
+              "(r_valley = $r_valley, r_peak = $r_peak, zone $lower_idx:$upper_idx)")
+    end
+    # The residual jumps where a node enters or leaves the flattened set, so the bracketed root can
+    # sit on such a jump; once the set is fixed, its plateau is the v²-weighted mean over it, which
+    # conserves the discrete invariant exactly (any sub-round-off edge mismatch is lifted by convect!)
+    J = flattened_cells(find_zero(energy_residual, (s_valley, s_peak)))
+    s_current = sum(w[i] * v2_center[i] * s_center[i] for i in J) / sum(w[i] * v2_center[i] for i in J)
 
+    # Flatten the profile
+    s_center[J] .= s_current
+    return
 end

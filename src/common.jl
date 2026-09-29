@@ -142,6 +142,12 @@ lmfp_logconst(cs::InterpolatedCS, G, C) = log(pi^1.5 * G / (C * cs.σ0))
     r_max::Float64
     r_min::Float64
     gridpoints::Int64
+    # Adaptive-regrid toggle. When true, evolve calls update_grid! each outer
+    # step to redistribute mass shells toward steep-gradient regions (e.g. the
+    # migrating convective boundary), using a v²-weighted donor-cell remap that
+    # conserves the heat integral ∫v²s dm (and ∫v² dm) locally. Default false so
+    # the calibrated deep-SMFP/LMFP runs stay on the static grid, unchanged.
+    regrid::Bool = false
     snap_interval_time::Float64
     snap_interval_density::Float64
     snap_loc::String
@@ -153,11 +159,24 @@ lmfp_logconst(cs::InterpolatedCS, G, C) = log(pi^1.5 * G / (C * cs.σ0))
     #   u = ln(Kinv_smfp/Kinv_lmfp).
     # The bump dies super-polynomially, so both tails are exactly the
     # asymptotic branches (SMFP side Burnett-consistent O(Kn_loc²)).
-    # Defaults are the LOCAL values measured from the DSMC heating
-    # trajectories (fit_kappa_local.jl, jointly with C above):
-    # (A, W, C) = (1.2046 ± 0.039, 1.7499 ± 0.050, 0.8620 ± 0.026).
-    bump_A::Float64 = 1.2046
-    bump_W::Float64 = 1.7499
+    # Defaults are the DIRECT heat-flux-moment measurement (notes/flux_moment.tex,
+    # flux_cross_joint.jl), the joint fit restricted to the three DSMC runs that
+    # straddle the crossover peak (sigma = 7482, 25000, 83333 cm^2/g):
+    #   (A, W) = (1.31 ± 0.05, 1.68 ± 0.09),   5167 bins, chi2/dof = 1.17.
+    # Verified against fluid collapse times (rms ln(fluid/DSMC) = 0.044, vs 0.039
+    # for the superseded set below and 0.085 for the all-six-run variant).
+    # SUPERSEDES (A, W) = (1.2046 ± 0.039, 1.7499 ± 0.050) from the DSMC heating
+    # trajectories (fit_kappa_local.jl), which were fit jointly with C = 0.8620.
+    # C is deliberately NOT moved: the flux-moment reduction assumed the deep-LMFP
+    # anchor C = 0.8505, but ln(0.8620/0.8505) = 0.013 shifts u by 0.8% of W, so
+    # (A, W) are insensitive to the choice and every other calibration keeps 0.8620.
+    bump_A::Float64 = 1.31
+    bump_W::Float64 = 1.68
+    # Diagnostic toggle: drop the LMFP branch (and the crossover bump, which
+    # dies as Kinv_lmfp→0) so κ = 1/Kinv_smfp is the pure 2-Sonine SMFP
+    # Chapman-Enskog conductivity everywhere. For testing how far the SMFP
+    # closure alone tracks the collapse (see calc_κ_log in transport.jl).
+    lmfp_off::Bool = false
     # K_p prefactors (Eq. K_p): K_p = K_p_prefactor * v2^(n/2), with
     # K_p ∝ Γ((n+p+3)/2), for the power-law cross section σ = σ0 (v/w)^n.
     # K5 reproduces the previous `f_k5_prefactor` exactly.

@@ -59,6 +59,7 @@ calc_κ_log(lρ, lv2, run_params) = calc_κ_log(lρ, lv2, run_params.cs, run_par
 #   ln Kinv_lmfp = lci_l − ln ρ − (n+3)/2 · ln v²
 @inline function calc_κ_log(lρ, lv2, ::PowerLawCS, run_params)
     lki_s = run_params.lci_s + 0.5 * (run_params.n - 1) * lv2
+    run_params.lmfp_off && return exp(-lki_s)   # κ = 1/Kinv_smfp (pure 2-Sonine SMFP CE)
     lki_l = run_params.lci_l - lρ - 0.5 * (run_params.n + 3) * lv2
     u = lki_s - lki_l
     return 1.0 / ((exp(lki_s) + exp(lki_l)) *
@@ -69,6 +70,7 @@ end
 #   ln Kinv_lmfp = lb_l − ln ρ − (3/2) ln v² − ln K5(v²)
 @inline function calc_κ_log(lρ, lv2, cs::InterpolatedCS, run_params)
     lki_s = run_params.lb_s + lookup(cs.logKeff2, lv2) - 0.5 * lv2
+    run_params.lmfp_off && return exp(-lki_s)   # κ = 1/Kinv_smfp (pure 2-Sonine SMFP CE)
     lki_l = run_params.lb_l - lρ - 1.5 * lv2 - lookup(cs.logK5, lv2)
     u = lki_s - lki_l
     return 1.0 / ((exp(lki_s) + exp(lki_l)) *
