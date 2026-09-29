@@ -1,11 +1,3 @@
-
-"""
-    SidmStars
-
-
-
-"""
-
 module SIDMStars
 using LinearAlgebra
 using LoopVectorization

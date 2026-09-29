@@ -176,7 +176,6 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r
         nl_prob = NonlinearProblem(nf, u0_guess, p_nl)
         
         try
-           # solve(nl_prob, RobustMultiNewton(), abstol=1e-3, maxiters=1000)
             nl_sol = solve(nl_prob, RobustMultiNewton(), abstol=1e-3, maxiters=1000)
             
             if SciMLBase.successful_retcode(nl_sol.retcode)
@@ -189,8 +188,6 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r
                     abstol /= 10.
                     reltol /= 10.
                     p_nl = nlprob_params(log_r_min_old, log_p_surf, prob_out, prob_in, log_P_c_old, logM_fit, logM_inner, logM_outer, abstol, reltol)
-
-                #u0_guess = [log_P_guess_in, log_R_guess_out]
                 moved_fitting_point = false # Reset flag
             end
             
@@ -218,14 +215,6 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r
                     prob_out = ODEProblem{false,SciMLBase.FullSpecialize}(hse_system, SVector{3}(0., 0., 0.), span_out, params)
                     prob_in  = ODEProblem{false,SciMLBase.FullSpecialize}(hse_system, SVector{3}(0., 0., 0.), span_in, params)
                     p_nl = nlprob_params(log_r_min_old, log_p_surf, prob_out, prob_in, log_P_c_old, logM_fit, logM_inner, logM_outer, abstol, reltol)
-                    
-                    # Update integration spans for the next attempt
-                  
-                    #p_nl = nlprob_params(log_r_min_old, log_p_surf, logM_fit, logM_inner, logM_outer)
-                        
-                  #  u0_guess = SVector(log_P_guess_in, log_R_guess_out)
-                    #nf = NonlinearFunction{false, SciMLBase.FullSpecialize}(get_residuals, u0_guess)
-
                     moved_fitting_point = true # Mark that we tried moving it
                 else
                     # It failed again, even after we just moved the fitting point
@@ -237,9 +226,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r
                         println("Outward integration failed at ", exp(e.t_out_end))
                     else
                         println("Both integrations failed. Good luck!")
-                        logM_fit = e.t_in_end 
-                
-
+                        logM_fit = e.t_in_end
                     end
                         abstol /= 10.
                         reltol /= 10.
@@ -261,8 +248,6 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r
     # Generate the Final Converged Profiles
     best_log_P_c, best_log_R_surf = isnothing(nl_sol) ? u0_guess : nl_sol.u
     best_log_r_min = log_r_min_old - (1. /4.) * (best_log_P_c - log_P_c_old)
-
-    #best_log_r_min = log(r_min_old * (exp(best_log_P_c-log_P_c_old))^(-0.25))
     p_out_final = remake(prob_out, u0=SVector{3}(best_log_r_min, best_log_P_c, 0.0), tspan=span_out)
     final_sol_out = solve(p_out_final, alg=Rodas5(), reltol=reltol, abstol=abstol)
 

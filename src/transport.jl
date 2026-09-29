@@ -99,7 +99,6 @@ end
 #this is a relatively heavy implementation, but it should be accurate even for low grid resolution 
 function evaporation_integral!(du, u, p, logm)
     τ = u[1]
-   #Edot = u[2]
     v2_part = p.v2_i + 2*p.dPhi(logm)
     P = exp(p.logP(logm))
     r = exp(p.logr(logm))

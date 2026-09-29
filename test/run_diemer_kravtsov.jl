@@ -5,7 +5,6 @@ using PyPlot
 
 using QuadGK
 
-#using PyPlot
 
 # Surface pressure from the weight of the (near-zero-density) material
 # overlying r_max, exactly as in run_nfw.jl. Leaving p_outer at its default
@@ -42,9 +41,7 @@ dm_params = RunParams(
 
 profile = setup_dk_profile(5e6, 7, 1.0, z=10)
 P_surf = find_psurf(profile, dm_params.r_max, dm_params.G)
-#sol_init = initialize_profile(dm_params,profile, p_outer=P_surf);
 #eps_diff: inverse number of timesteps per von Neumann constraint on dt
 #eps_kh: inverse number of timesteps per 1/\dot s
 evolve(dm_params,profile,eps_diff=0.2, eps_kh=.001, mass_min_frac=1e-5, p_outer=P_surf);
 snap = read_snapshot_file("dk_out.hdf5")
-#loglog(snap["r"], snap["rho"])

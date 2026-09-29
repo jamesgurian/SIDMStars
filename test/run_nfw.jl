@@ -1,6 +1,5 @@
 
 using SIDMStars
-#using PyPlot
 
 using QuadGK
     
@@ -40,6 +39,4 @@ dm_params = RunParams(
     gridpoints=200,
     snap_loc= "nfw_out.hdf5"
 )
-#semilogx(sol[1].t, sol[2].(sol[1].t))
-#savefig("out.png")
 sol = evolve(dm_params, prof,eps_kh=.05, eps_diff=0.2, mass_min_frac=1e-6, p_outer=P_surf);

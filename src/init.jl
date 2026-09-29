@@ -33,9 +33,6 @@ function get_scale_rho_and_r_from_Mvir_cvir(M_vir, c_vir;
     # Physical Matter Density at redshift z: rho_m(z)
     # rho_m(z) = rho_crit_0 * Om0 * (1+z)^3
     rho_m_kpc = rho_crit_0 * Om0 * (1 + z)^3
-    
-    # Convert rho_m to M_sun / pc^3 for final output/consistency with source
-    # 1 kpc^3 = 10^9 pc^3
 
     # --- Step 1: Calculate Virial Radius (R_vir) ---
     # R_vir = (3 M / 4 π Δ ρ)^(1/3)
@@ -49,10 +46,8 @@ function get_scale_rho_and_r_from_Mvir_cvir(M_vir, c_vir;
     # --- Step 3: Calculate Characteristic Density (rho_s) ---
     bracket_term = log(1 + c_vir) - c_vir / (1 + c_vir)
     
-    # Calculate rho_s in M_sun / kpc^3 first (since r_s is in kpc)
+    # rho_s in M_sun / kpc^3 (r_s is in kpc)
     rho_s_kpc = M_vir / (4 * π * r_s^3 * bracket_term)
-    
-    # Convert to M_sun / pc^3
 
     # --- Output ---
     @printf("M_vir: %0.1e, c_vir: %0.2f, z: %0.2f\n", M_vir, c_vir, z)
@@ -70,31 +65,19 @@ function setup_dk_profile(M_vir, c_vir, nu; kwargs...)
 end
 
 function initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_frac=1e-7)
-    # Setup a Radial Grid 
-    # Integrate Mass Outwards 
-    # dM = 4 * pi * r^2 * ρ * dr
+    # Integrate HSE inward in mass from r_max, with dr/dm = 1/(4 pi r^2 ρ)
     safety_factor=1 #integrate a bit further, in case the bc was weird
         
     r_start = 1e-3 * run_params.r_min
     r_end = run_params.r_max * safety_factor
 
-    # 2. Calculate total mass
+    # 1. Calculate total mass
     M_tot, _ = quadgk(r -> 4 * pi * r^2 * rho_initial(r), r_start, r_end)
 
-    # 3. Find r_core using Roots.jl
+    # 2. Inner mass boundary
     M_target = mass_min_frac * M_tot
 
-    # Objective function: difference between enclosed mass at r and the target mass
-    mass_diff(r) = quadgk(x -> 4 * pi * x^2 * rho_initial(x), r_start, r)[1] - M_target
-
-    # find_zero will quickly find the root within the bracketing interval
-    #r_core = find_zero(mass_diff, (r_start, r_end))
-
-    # 4. Create the modified, continuous density profile
-   # rho_core = rho_initial(r_core)
-   # rho_modified(r) = r > r_core ? rho_initial(r) : rho_core
-
-    # 5. Set up and solve the ODE using the modified density
+    # 3. Set up and solve the ODE
     M_span = (M_tot, M_target)
     u0 = SVector(r_end, Float64(p_outer))
     G = run_params.G
@@ -110,20 +93,13 @@ end
 
 
 function initialize_profile(run_params, rho_initial, M_min, M_tot; p_outer=1e-10, mass_min_frac=1e-7)
-    # Setup a Radial Grid 
-    # Integrate Mass Outwards 
-    # dM = 4 * pi * r^2 * ρ * dr
+    # Integrate HSE inward in mass from r_max, with dr/dm = 1/(4 pi r^2 ρ)
     safety_factor=1 #integrate a bit further, in case the bc was weird
         
     r_start = 1e-3 * run_params.r_min
     r_end = run_params.r_max * safety_factor
 
-    # 2. Calculate total mass
-   # M_tot, _ = quadgk(r -> 4 * pi * r^2 * rho_initial(r), r_start, r_end)
-
-    # 3. Find r_core using Roots.jl
-   # M_target = mass_min_frac * M_tot
-
+    # 1. Find r_core using Roots.jl
     # Objective function: difference between enclosed mass at r and the target mass
     # quadgk returns a tuple (integral, error), so we grab [1]
     mass_diff(r) = quadgk(x -> 4 * pi * x^2 * rho_initial(x), r_start, r)[1] - M_min
@@ -131,11 +107,11 @@ function initialize_profile(run_params, rho_initial, M_min, M_tot; p_outer=1e-10
     # find_zero will quickly find the root within the bracketing interval
     r_core = find_zero(mass_diff, (r_start, r_end))
 
-    # 4. Create the modified, continuous density profile
+    # 2. Create the modified, continuous density profile
     rho_core = rho_initial(r_core)
     rho_modified(r) = r > r_core ? rho_initial(r) : rho_core
 
-    # 5. Set up and solve the ODE using the modified density
+    # 3. Set up and solve the ODE using the modified density
     M_span = (M_tot, M_min)
     u0 = SVector(r_end, Float64(p_outer))
     G = run_params.G

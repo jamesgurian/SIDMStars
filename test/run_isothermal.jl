@@ -1,7 +1,6 @@
 
 using Revise
 using SIDMStars
-#using PyPlot
 
 using Unitful
 using UnitfulAstro

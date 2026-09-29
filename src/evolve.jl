@@ -95,54 +95,18 @@ function initialize_grid(gridpoints, rho_initial, run_params, p_outer, mass_min_
 end
 
 
-#we want to construct a grid which has resolution where log(r) or s are varying rapidly
-
-function calc_Q!(state, run_params::RunParams{ConvectionOn, T}) where T
-
+# Refinement weight for update_grid!: points are equidistributed in Q, so they
+# concentrate where log r, log m or log(1/P) vary rapidly. s is deliberately
+# left out: convect! flattens the core to exact-constant entropy plateaus whose
+# sharp inner edge makes an s-term near-discontinuous and drives a
+# self-amplifying mesh-clustering runaway (points pile on the plateau edge, dt→0).
+function calc_Q!(state, run_params)
     r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
-
-    invP = 1 ./ state.P_center
-
-    invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
-
-    # s is dropped from the monitor: convect! flattens the core to exact-constant
-    # entropy plateaus whose sharp inner edge makes the s-term near-discontinuous
-    # and drives a self-amplifying mesh-clustering runaway (points pile on the
-    # plateau edge, dt→0). Use the smooth r / log m / 1/P monitor (same form as
-    # the ConvectionOff branch below).
     m_norm = (log.(state.m_center) .- log.(state.m_center[1])) ./ (log.(state.m_center[end]) - log.(state.m_center[1]))
-
-    Q_center = (0.4) .* (r_norm .+ m_norm) .+ 0.2 .* invP_norm
-
-end
-
-
-
-#s is only guaranteed monotonic with convection on 
-
-#so we need a different Q which doesn't  rely on s
-
-function calc_Q!(state, run_params::RunParams{ConvectionOff, T}) where T
-
-    r_norm = (log.(state.r_center) .- log.(state.r_center[1])) ./ (log.(state.r_center[end]) - log.(state.r_center[1]))
-
-    m_norm = (log.(state.m_center) .- log.(state.m_center[1])) ./ (log.(state.m_center[end]) - log.(state.m_center[1]))
-
-
-
     invP = 1 ./ state.P_center
-
     invP_norm = (log.(invP) .- log.(invP[1])) ./ (log.(invP[end]) - log.(invP[1]))
-
-
-
-    Q_center = (0.4) .* (r_norm .+ m_norm ) .+ 0.2 .* invP_norm
-
+    return 0.4 .* (r_norm .+ m_norm) .+ 0.2 .* invP_norm
 end
-
-
-
-
 
 # v²-weighted donor-cell (finite-volume) remap of specific entropy s from an old
 # mass grid onto a new one. Old cell i spans [mf_old[i], mf_old[i+1]] with
@@ -180,8 +144,8 @@ end
 
 function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
     # Pick the new mass grid by equidistributing the refinement weight Q (which
-    # concentrates points where log r / s / 1/P vary rapidly, e.g. the migrating
-    # convective boundary). Q is built from the CURRENT (old-grid) state.
+    # concentrates points where log r / log m / 1/P vary rapidly). Q is built
+    # from the CURRENT (old-grid) state.
     Q_center = calc_Q!(state, run_params)
     logm_of_Q = PCHIPInterpolation(state.logm_center, Q_center)
     Q_range = collect(range(Q_center[1], stop = Q_center[end], length=gridpoints-1))
@@ -225,13 +189,6 @@ function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
     state.ρ_center  .= state.P_center.^(3/5) .* exp.(-2 .* state.s_center ./ 5)
     state.v2_center .= state.P_center ./ state.ρ_center
     return state
-
-
-
-
-
-
-
 end
 
 function core_energy(P_c, ρ_c, r_c, r_min, m_f1, G)
@@ -322,10 +279,6 @@ function explicit_dsdt_conduction!(state::GridState, G, eps_diff, run_params)
         state.dL_dm[i] = (state.L_face[i+1] - state.L_face[i]) / state.dm_cell[i]
         state.dsdt_conduct[i] = - state.dL_dm[i] / state.v2_center[i]
     end
-        
-
-    slope_conduct2 = (state.dsdt_conduct[end-1] - state.dsdt_conduct[end-2])/log(state.dm_between_centers[end-1])
-    state.dsdt_conduct[end-1] + slope_conduct2 * log(state.dm_between_centers[end])
 
     state.dt_diff_array .= state.dm_between_centers .^2 ./ state.prefactor_face
 
@@ -352,8 +305,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
     G = run_params.G
 
-    
-    
     state, r_min, sol, s = initialize_grid(gridpoints, rho_initial, run_params, p_outer, mass_min_frac)
 
     M_tot_init = state.M_tot[]
@@ -376,12 +327,9 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     E_core = core_energy(state.P_center[1], state.ρ_center[1], state.r_center[1], state.r_face[1], state.m_face[1], G)
     sol, logP_core, ρ_core, abstol, reltol, E_core, dE_implied =
         hse_update!(state, logP_core, s_interp, E_core, G, abstol, reltol)
+    dt_diffusion = explicit_dsdt_conduction!(state,  G, eps_diff, run_params)
 
-
-        dt_diffusion = explicit_dsdt_conduction!(state,  G, eps_diff, run_params)
-    #update_grid!(state, s_interp, sol, gridpoints, run_params)
-
-        snap_idx = 1
+    snap_idx = 1
     if !isinf(run_params.snap_interval_time)
         write_snapshot!(run_params.snap_loc, snap_idx, t, state)
     end
@@ -389,7 +337,7 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
     logP_guess = log(state.P_center[1])
 
     while t < run_params.t_end
-    println("t:", t)
+        println("t:", t)
         #The von Neumann Stability condition is very strict compared to the thermal timescale
         #and calculating the evaporation rate is relatively expensive
         #so we subscycle
@@ -412,12 +360,6 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
             state.logm_face .= log.(state.m_face)  
             state.logm_center .= log.(state.m_center) 
             dt_diffusion = explicit_dsdt_conduction!(state,G, eps_diff, run_params)
-            
-            
-
-            
-
-            
         end
 
         #at this point, the conduction and evaporation rates are on different grids
@@ -466,6 +408,5 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
                 break
             end
         end
-
-   end
+    end
 end
