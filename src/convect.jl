@@ -22,7 +22,6 @@ function convect!(s_interp, s_center, v2_center,  m_center, run_params::RunParam
     while !issorted(s_center)
         #find the first region
         println("convection")
-       # semilogx(m_center, s_center)
         lower_idx, peak_idx, valley_idx, upper_idx = find_convective_zone(s_center)
         # adjust_entropy! root-finds on the interpolant, so it must see the CURRENT s: the passed-in
         # s_interp predates this call, and every earlier pass of this loop has flattened s_center
@@ -105,9 +104,12 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
     n = length(m_center)
     w = [i == 1 ? m_center[2] - m_center[1] : i == n ? m_center[n] - m_center[n-1] :
          0.5 * (m_center[i+1] - m_center[i-1]) for i in 1:n]
+    # Search in log m: a bracket-end fallback is then compared exactly, whereas exp(log(m)) can round
+    # past m and drop the end cell (for a zone reaching the core, the peak itself, so convect! never exits)
+    logm_center = log.(m_center)
     flattened_cells(s) = begin
         logm_a, logm_b = zone_edges(s)
-        searchsortedfirst(m_center, exp(logm_a)):searchsortedlast(m_center, exp(logm_b))
+        searchsortedfirst(logm_center, logm_a):searchsortedlast(logm_center, logm_b)
     end
     # heat defect of flattening those cells to s: sum w v² (s - s_i)  (zero = energy conserved)
     energy_residual(s) = sum(w[i] * v2_center[i] * (s - s_center[i]) for i in flattened_cells(s))
