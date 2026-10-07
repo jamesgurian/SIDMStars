@@ -1,25 +1,12 @@
 
 using SIDMStars
 
-using QuadGK
     
 r_max = 30.
 prof = x -> nfw_profile(1.18, 2.73e7,  x)
 
 
-function find_psurf(rho_func, r_max,G)
-    M_max, _ = quadgk(r -> 4 * π * r^2 * rho_func(r), 0.0, r_max)
-    P_integrand = function(r)
-        m_tail, _ = quadgk(x -> 4 * π * x^2 * rho_func(x), r_max, r)
-        M_enclosed = M_max + m_tail
-        return rho_func(r) * G * M_enclosed / r^2
-    end
-    
-    P_max, _ = quadgk(P_integrand, r_max, Inf)
-    return P_max
-end
-
-P_surf = find_psurf(prof, r_max, 4.30091727003628e-6)
+P_surf = calc_psurf(prof, r_max, 4.30091727003628e-6)
 
 
 # 3. Setup Params

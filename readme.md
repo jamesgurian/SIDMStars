@@ -17,18 +17,13 @@ pkg> dev /path/to/SIDMStars
 
 ```julia
 using SIDMStars
-using QuadGK
 
 G     = 4.30091727003628e-6          # kpc (km/s)^2 / M_sun
 r_max = 30.0                         # kpc
 ρ(r)  = nfw_profile(1.18, 2.73e7, r) # r_s [kpc], rho_s [M_sun/kpc^3]
 
 # Pressure at r_max from the weight of the halo outside it.
-M_max, _ = quadgk(r -> 4π * r^2 * ρ(r), 0.0, r_max)
-p_outer, _ = quadgk(r_max, Inf) do r
-    M_enc = M_max + quadgk(x -> 4π * x^2 * ρ(x), r_max, r)[1]
-    ρ(r) * G * M_enc / r^2
-end
+p_outer = calc_psurf(ρ, r_max, G)
 
 params = RunParams(
     G          = G,
@@ -81,12 +76,13 @@ must be in the same system. The examples use kpc, M_sun and km/s:
 |----------|-------------|
 | `evolve(run_params, rho_initial; kwargs...)` | Build the initial state from `rho_initial(r)`, evolve it, and write snapshots to `run_params.snap_loc`. Returns `nothing`. |
 | `initialize_profile(run_params, rho_initial; p_outer, mass_min_frac)` | Only the initial hydrostatic-equilibrium solve. Returns `(sol, s_func, M_tot)`. `evolve` calls it for you. |
+| `calc_psurf(rho_func, r_max, G)` | Pressure at `r_max` from the weight of the material outside it (hydrostatic equilibrium). Pass it as `p_outer`. |
 
 Keyword arguments to `evolve`:
 
 | Keyword | Default | Meaning |
 |---------|---------|---------|
-| `p_outer` | `0` | Pressure at `r_max`. Set it to the weight of the material outside `r_max` (see Quick start); `0` can destabilize the outer shells. |
+| `p_outer` | `0` | Pressure at `r_max`. Set it to the weight of the material outside `r_max`, e.g. `calc_psurf(rho_initial, r_max, G)`; `0` can destabilize the outer shells. |
 | `mass_min_frac` | `1e-6` | Inner mass boundary, as a fraction of the mass inside `r_max`. Inside it the density is held flat. |
 | `eps_diff` | `1` | Timestep as a fraction of the explicit diffusion stability limit. |
 | `eps_kh` | `0.05` | Timestep as a fraction of the shortest entropy-change timescale. |

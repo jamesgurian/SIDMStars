@@ -83,6 +83,27 @@ function setup_dk_profile(M_vir, c_vir, nu; kwargs...)
 end
 
 """
+    calc_psurf(rho_func, r_max, G)
+
+Pressure at `r_max` from the weight of the material outside it, assuming
+hydrostatic equilibrium: `P(r_max) = ∫_{r_max}^∞ ρ(r) G M(r) / r^2 dr`, with
+`M(r)` the mass enclosed by `r`. Pass the result as `p_outer` to
+[`evolve`](@ref). `rho_func(r)` must fall off fast enough for the integral to
+converge.
+"""
+function calc_psurf(rho_func, r_max, G)
+    M_max, _ = quadgk(r -> 4 * π * r^2 * rho_func(r), 0.0, r_max)
+    P_integrand = function(r)
+        m_tail, _ = quadgk(x -> 4 * π * x^2 * rho_func(x), r_max, r)
+        M_enclosed = M_max + m_tail
+        return rho_func(r) * G * M_enclosed / r^2
+    end
+
+    P_max, _ = quadgk(P_integrand, r_max, Inf)
+    return P_max
+end
+
+"""
     initialize_profile(run_params, rho_initial; p_outer=1e-10, mass_min_frac=1e-7)
 
 Integrate hydrostatic equilibrium inward in enclosed mass for the density

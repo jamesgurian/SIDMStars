@@ -1,7 +1,6 @@
 using Test
 using SIDMStars
 using SIDMStars: K5, K7, K9, Keff2, calc_κ_log
-using QuadGK
 
 # InterpolatedCS built from a power-law shape σ̂(v²) = (v²/w²)^(n/2) must reproduce
 # the closed-form PowerLawCS K5, K_eff^(2) and calc_κ_log to ≲1e−4, inside the
@@ -93,22 +92,9 @@ end
 # --- End-to-end evolve() runs, demonstrating actual usage of the general
 # CrossSection dispatch (not just the moment-level checks above). ---
 
-# Surface pressure from the weight of the (near-zero-density) material
-# overlying r_max (same construction as test/run_nfw.jl).
-function find_psurf(rho_func, r_max, G)
-    M_max, _ = quadgk(r -> 4 * π * r^2 * rho_func(r), 0.0, r_max)
-    P_integrand = function(r)
-        m_tail, _ = quadgk(x -> 4 * π * x^2 * rho_func(x), r_max, r)
-        M_enclosed = M_max + m_tail
-        return rho_func(r) * G * M_enclosed / r^2
-    end
-    P_max, _ = quadgk(P_integrand, r_max, Inf)
-    return P_max
-end
-
 r_max_run = 30.
 prof = x -> nfw_profile(1.18, 2.73e7, x)
-P_surf = find_psurf(prof, r_max_run, G)
+P_surf = calc_psurf(prof, r_max_run, G)
 
 run_kwargs = (convection = ConvectionOff(), evaporation = EvaporationOff(),
               G = G, C = C, t_end = 0.05, r_max = r_max_run, r_min = 1e-3,

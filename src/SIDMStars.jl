@@ -60,6 +60,7 @@ export Constants
 export nfw_profile
 export dk_profile
 export setup_dk_profile
+export calc_psurf
 export evolve
 export read_snapshot_file
 

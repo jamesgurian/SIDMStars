@@ -288,7 +288,7 @@ radius) under the settings in [`RunParams`](@ref). Output is written to
 Keywords:
 - `p_outer`: pressure at the outer boundary `r_max`. Set this to the weight of
   the material outside `r_max`; leaving it at `0` can make the outer shells
-  unstable (see `test/run_nfw.jl` for one way to compute it).
+  unstable; [`calc_psurf`](@ref) computes it.
 - `mass_min_frac`: inner mass boundary as a fraction of the total mass inside
   `r_max`. The profile is flattened to constant density inside it.
 - `eps_diff`: timestep as a fraction of the explicit diffusion stability limit.
