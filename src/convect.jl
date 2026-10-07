@@ -97,10 +97,8 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
         return logm_a, logm_b
     end
     # Cell masses (faces are midpoints of the centres; the two end cells are taken symmetric). The
-    # energy is measured on exactly the cells that get flattened, so the invariant sum v² s dm is the
-    # one conserved. (Integrating to the continuity points by linearly interpolating cumulative
-    # trapezoid integrals instead pulls in the next node's s across a partial cell; for 2-3 cell
-    # zones that flips the sign the bracket below relies on.)
+    # energy is measured on exactly the cells that get flattened, so the discrete sum v² s dm is
+    # conserved.
     n = length(m_center)
     w = [i == 1 ? m_center[2] - m_center[1] : i == n ? m_center[n] - m_center[n-1] :
          0.5 * (m_center[i+1] - m_center[i-1]) for i in 1:n]
@@ -114,11 +112,8 @@ function adjust_entropy!(s_interp, s_center, v2_center, m_center, lower_idx, pea
     # heat defect of flattening those cells to s: sum w v² (s - s_i)  (zero = energy conserved)
     energy_residual(s) = sum(w[i] * v2_center[i] * (s - s_center[i]) for i in flattened_cells(s))
 
-    # The plateau lies between the local minimum and maximum, and the residual changes sign across
-    # [s_valley, s_peak] (<= 0 at the valley, >= 0 at the peak), so bracket it. A Newton iteration
-    # here is not safe: the continuity points jump between a root and a bracket end whenever the
-    # iterate crosses s_peak or s_valley, the residual is discontinuous there, and for shallow
-    # inversions Newton cycles; the old relative stopping test (no abs, |s| scale) hid that.
+    # The residual is <= 0 at s_valley and >= 0 at s_peak, so bracket the root. (Newton is unsafe:
+    # the residual is discontinuous where the zone edges jump to the bracket ends.)
     r_valley = energy_residual(s_valley)
     r_peak = energy_residual(s_peak)
     if !(r_valley <= 0 <= r_peak)

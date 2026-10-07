@@ -1,30 +1,21 @@
-# K5/K7/K9/Keff2 dispatch on the cross section carried in RunParams (see the
-# CrossSection hierarchy in common.jl). The (v2, run_params) signatures are
-# kept so existing analysis scripts continue to work unchanged.
+# Velocity moments K_p (Eq. K_p), dispatched on run_params.cs.
 K5(v2, run_params::RunParams) = K5(v2, run_params.cs)
 K7(v2, run_params::RunParams) = K7(v2, run_params.cs)
 K9(v2, run_params::RunParams) = K9(v2, run_params.cs)
 Keff2(v2, run_params::RunParams) = Keff2(v2, run_params.cs)
 
-# PowerLawCS: closed-form K_p = K_p_prefactor * v2^(n/2), K_p ∝ Γ((n+p+3)/2),
-# for the power-law cross section σ = σ0 (v/w)^n (Eq. K_p). Recomputed from
-# (σ0, w, n) each call — same deterministic arithmetic as the old cached
-# RunParams.K5_prefactor·v2^(n/2), so results are bitwise identical to before.
+# PowerLawCS: closed form, K_p ∝ Γ((n+p+3)/2) v2^(n/2).
 K5(v2, cs::PowerLawCS) = ((1/3)  * 2^(cs.n-1) * gamma(cs.n/2 + 4) / cs.w^cs.n) * v2^(cs.n/2)
 K7(v2, cs::PowerLawCS) = ((1/12) * 2^(cs.n-1) * gamma(cs.n/2 + 5) / cs.w^cs.n) * v2^(cs.n/2)
 K9(v2, cs::PowerLawCS) = ((1/60) * 2^(cs.n-1) * gamma(cs.n/2 + 6) / cs.w^cs.n) * v2^(cs.n/2)
 
-# InterpolatedCS: K5 is an O(1) table lookup (the hot-path quantity); K7/K9
-# aren't cached (nothing downstream needs them individually) so fall back to
-# direct quadrature of the generic moment (Eq. K_p, common.jl).
+# InterpolatedCS: K5 and K7 from the tables; K9 is not tabulated and is integrated directly.
 K5(v2, cs::InterpolatedCS) = exp(lookup(cs.logK5, log(v2)))
-K7(v2, cs::InterpolatedCS) = _moment(cs.σ̂, v2, 9, 1/12)
+K7(v2, cs::InterpolatedCS) = exp(lookup(cs.logK7, log(v2)))
 K9(v2, cs::InterpolatedCS) = _moment(cs.σ̂, v2, 11, 1/60)
 
-# Second-order Chapman-Enskog SMFP conductivity factor (Eq. k_secondorder):
+# Second-order Chapman-Enskog SMFP factor (Eq. k_secondorder):
 #   K_eff^(2) = (28 K5^2 + 80 K5 K9 - 64 K7^2) / (77 K5 - 112 K7 + 80 K9)
-# Generic fallback (valid for any σ, PowerLawCS included); InterpolatedCS
-# overrides it below with a direct table lookup (avoids recomputing K7/K9).
 function Keff2(v2, cs::CrossSection)
     k5 = K5(v2, cs); k7 = K7(v2, cs); k9 = K9(v2, cs)
     (28*k5^2 + 80*k5*k9 - 64*k7^2) / (77*k5 - 112*k7 + 80*k9)
@@ -38,28 +29,27 @@ function Kinv_smfp(v2, run_params)
     run_params.σ0 * Keff2(v2, run_params) / (b * sqrt(v2))
 end
 
-
-# LMFP: κ_LMFP uses K5 (Eq. kappa_lmfp), a = 4/√π
-function Kinv_lmfp(v2, ρ, run_params,G)
-    a = 4/sqrt(pi)
-    4 * pi * G / ( a * run_params.C * ρ * sqrt(v2)^3 * run_params.σ0 * K5(v2,run_params))
+# LMFP velocity weighting K_lmfp = (1 − a) K5 + a K7, a = run_params.lmfp_K7_frac (K5 when a = 0).
+function Klmfp(v2, run_params)
+    a = run_params.lmfp_K7_frac
+    a == 0 ? K5(v2, run_params) : (1 - a) * K5(v2, run_params) + a * K7(v2, run_params)
 end
 
-# Total conductivity: SMFP and LMFP branches joined by the log-Gaussian
-# resistivity bump measured from the DSMC heating trajectories (see common.jl),
+# LMFP: κ_LMFP uses K_lmfp (Eq. kappa_lmfp with K5 → K_lmfp), a = 4/√π
+function Kinv_lmfp(v2, ρ, run_params,G)
+    a = 4/sqrt(pi)
+    4 * pi * G / ( a * run_params.C * ρ * sqrt(v2)^3 * run_params.σ0 * Klmfp(v2,run_params))
+end
+
+# Total conductivity, SMFP and LMFP branches joined by the crossover bump (see RunParams):
 #   1/κ = (Kinv_smfp + Kinv_lmfp) · [1 + A exp(−u²/2W²)],  u = ln(Kinv_smfp/Kinv_lmfp).
-# Evaluated entirely in log space. Dispatches on rp.cs: the PowerLawCS method
-# is the hot path (both branch resistivities are power laws in (ρ, v²), so
-# with the coefficients precomputed in RunParams no log or pow is needed in
-# the kernel, just three exp); the InterpolatedCS method reads K5/K_eff^(2)
-# off the precomputed tables instead of closed-form prefactors.
+# Evaluated in log space from ln ρ and ln v².
 calc_κ_log(lρ, lv2, run_params) = calc_κ_log(lρ, lv2, run_params.cs, run_params)
 
 #   ln Kinv_smfp = lci_s + (n−1)/2 · ln v²
 #   ln Kinv_lmfp = lci_l − ln ρ − (n+3)/2 · ln v²
 @inline function calc_κ_log(lρ, lv2, ::PowerLawCS, run_params)
     lki_s = run_params.lci_s + 0.5 * (run_params.n - 1) * lv2
-    run_params.lmfp_off && return exp(-lki_s)   # κ = 1/Kinv_smfp (pure 2-Sonine SMFP CE)
     lki_l = run_params.lci_l - lρ - 0.5 * (run_params.n + 3) * lv2
     u = lki_s - lki_l
     return 1.0 / ((exp(lki_s) + exp(lki_l)) *
@@ -67,18 +57,19 @@ calc_κ_log(lρ, lv2, run_params) = calc_κ_log(lρ, lv2, run_params.cs, run_par
 end
 
 #   ln Kinv_smfp = lb_s + ln K_eff^(2)(v²) − (1/2) ln v²
-#   ln Kinv_lmfp = lb_l − ln ρ − (3/2) ln v² − ln K5(v²)
+#   ln Kinv_lmfp = lb_l − ln ρ − (3/2) ln v² − ln K_lmfp(v²)
 @inline function calc_κ_log(lρ, lv2, cs::InterpolatedCS, run_params)
     lki_s = run_params.lb_s + lookup(cs.logKeff2, lv2) - 0.5 * lv2
-    run_params.lmfp_off && return exp(-lki_s)   # κ = 1/Kinv_smfp (pure 2-Sonine SMFP CE)
-    lki_l = run_params.lb_l - lρ - 1.5 * lv2 - lookup(cs.logK5, lv2)
+    a7 = run_params.lmfp_K7_frac
+    lK_l = a7 == 0 ? lookup(cs.logK5, lv2) :
+           log((1 - a7) * exp(lookup(cs.logK5, lv2)) + a7 * exp(lookup(cs.logK7, lv2)))
+    lki_l = run_params.lb_l - lρ - 1.5 * lv2 - lK_l
     u = lki_s - lki_l
     return 1.0 / ((exp(lki_s) + exp(lki_l)) *
                   (1.0 + run_params.bump_A * exp(-u * u * run_params.inv2W2)))
 end
 
 # Value-space wrapper: ln ρ = (3/5)ln P − (2/5)s, ln v² = (2/5)(ln P + s).
-# The hot loop in evolve.jl calls calc_κ_log directly with logs it already has.
 @inline function calc_κ(P, s, run_params)
     lP = log(P)
     calc_κ_log(0.6 * lP - 0.4 * s, 0.4 * (lP + s), run_params)
@@ -94,9 +85,8 @@ struct EvaporationParams{T,U,V,W}
     v2_i::Float64
 end
 
-#tau of surface velocity v 
-#we integrate the optical depth, energy loss, and mass loss along particle trajectories
-#this is a relatively heavy implementation, but it should be accurate even for low grid resolution 
+# Optical depth, energy loss and mass loss integrated inward along the trajectory of a
+# particle with surface speed sqrt(v2_i).
 function evaporation_integral!(du, u, p, logm)
     τ = u[1]
     v2_part = p.v2_i + 2*p.dPhi(logm)
@@ -177,7 +167,6 @@ function calc_evaporation(run_params::RunParams{T, EvaporationOn},G, sol, s, m_f
     #v2 = 2/3 u
     #s = (3/2)log(v2) - log(rho)
     sdot = udot ./ v2s .-  mdot ./ diff(m_face)
-    #it's silly to diff then cumsum, when we have the integral directly but...
     mdot_cum = cumsum(mdot,dims=1)
     return sdot, mdot_cum
 

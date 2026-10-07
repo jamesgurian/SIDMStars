@@ -48,7 +48,13 @@ end
 
 """
     read_snapshot_file(filename)
-Reads an HDF5 simulation file and returns a Dict of arrays.
+
+Read an output file written by [`evolve`](@ref) and return a `Dict`:
+- `"t"`: vector of snapshot times.
+- `"r"`, `"m"`, `"P"`, `"rho"`, `"s"`, `"L"`: matrices of size
+  `(gridpoints - 1, number of snapshots)` at cell centers: radius, enclosed mass,
+  pressure, density, entropy `log(P^(3/2)/ρ^(5/2))` and luminosity.
+- `"metadata"`: `Dict` of the run's [`RunParams`](@ref) fields.
 """
 function read_snapshot_file(filename)
     data = Dict{String, Any}()

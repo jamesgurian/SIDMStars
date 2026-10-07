@@ -18,7 +18,7 @@ function hse_system(u, p, logm)
                     Gm2 / (four_pi_r4 * ρ))
 end
 
-#hse equations used by init (not log transformed, for no good reason)
+# Linear-variable HSE equations for the initial profile, with ρ(r) prescribed
 function hse_system_rho(u, p, m)
     r = u[1]
     P = u[2]
@@ -27,86 +27,6 @@ function hse_system_rho(u, p, m)
                    -p.G * m / (4 * pi * r^4))
 end
 
-function shoot_1p(mspan, log_P_guess_in, log_r_min, log_p_surf, params)
-
-    # Define Problem Template
-    logM_inner, logM_outer = mspan[1], mspan[2]
-    u0_in_template = SVector(log_r_min, log_P_guess_in, 0.)
-    prob_inner_tmpl = ODEProblem{false,SciMLBase.FullSpecialize}(hse_system, u0_in_template, (logM_inner, logM_outer), params)
-    
-    # Callback: Terminate if pressure hits surface target early
-    condition(u, t, integrator) = u[2] < log_p_surf/5
-    affect!(integrator) = terminate!(integrator)
-    cb = DiscreteCallback(condition, affect!)
-    
-    # settings
-    tol = 1e-2
-    max_iter = 100
-
-    # Returns negative if Pc is too low, positive if Pc is too high
-    function get_residual(current_logP)
-        prob_in = remake(prob_inner_tmpl, u0=SVector(log_r_min, current_logP, 0.))
-        sol_in = solve(prob_in, callback=cb,reltol=1e-8)
-        #if Integration reached last grid point
-        if sol_in.t[end] >= mspan[2]
-            return (sol_in(logM_outer)[2] - log_p_surf) 
-            
-        else
-            
-            return -1.0 
-        end
-    end
-
-    #  Find a Bracket
-    step_size = 0.1 # Step size for log(P)
-    p_low, p_high = log_P_guess_in, log_P_guess_in
-    res_low, res_high = get_residual(p_low), get_residual(p_high)
-    
-    # Expand until we have one positive and one negative residual
-    expand_iter = 0
-    while sign(res_low) == sign(res_high) && expand_iter < 20
-        p_high += step_size/2
-        p_low -= step_size/2
-        res_high = get_residual(p_high)
-        res_low = get_residual(p_low)
-
-
-        expand_iter += 1
-    end
-    
-    if sign(res_low) == sign(res_high)
-        error("Could not bracket the root.")
-    end
-    
-    if res_low > 0
-        p_low, p_high = p_high, p_low
-        res_low, res_high = res_high, res_low
-    end
-    
-    iter = 0
-    p_mid = (p_high + p_low)/2
-    res_mid = Inf
-    while abs(res_mid) > tol && iter < max_iter
-        iter += 1
-        p_mid = (p_low + p_high) / 2
-        res_mid = get_residual(p_mid)
-
-        if res_mid == 0 || isapprox(p_low, p_mid)
-            break # Exact match found, or we ran out of floating point precision
-        elseif res_mid < 0
-            p_low = p_mid # Root is in upper half
-        else
-            p_high = p_mid # Root is in lower half
-        end
-    end
-    if iter == max_iter
-        error("Shooting did not converge")
-    end
-    
-    final_prob = remake(prob_inner_tmpl, u0=SVector{3}(log_r_min, p_mid, 0.))
-    sol = solve(final_prob,callback=cb,reltol=1e-8)
-    return sol
-end
 struct IntegrationFailure <: Exception
     t_out_end::Float64
     t_in_end::Float64
@@ -205,7 +125,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r
                         println("Outward integration failed")
                         logM_fit = e.t_out_end - .02
                     else
-                        println("Both integrations failed. Good luck!")
+                        println("Both integrations failed")
                         logM_fit = e.t_in_end 
                     end
                     
@@ -225,7 +145,7 @@ function shoot_2p_fit(mspan, log_P_guess_in, log_P_c_old, log_R_guess_out, log_r
                     elseif e.t_out_end != logM_fit && e.t_in_end == logM_fit
                         println("Outward integration failed at ", exp(e.t_out_end))
                     else
-                        println("Both integrations failed. Good luck!")
+                        println("Both integrations failed")
                         logM_fit = e.t_in_end
                     end
                         abstol /= 10.

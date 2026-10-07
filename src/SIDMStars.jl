@@ -34,6 +34,12 @@ include("evolve.jl")
 
 
 
+"""
+    SIDMStars.Constants
+
+CODATA 2018 physical constants (from PhysicalConstants.jl) with units,
+e.g. `Constants.G`, `Constants.k_B`.
+"""
 module Constants
         using PhysicalConstants
         using ..SIDMStars: @import_everything

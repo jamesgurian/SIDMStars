@@ -40,7 +40,6 @@ function initialize_grid(gridpoints, rho_initial, run_params, p_outer, mass_min_
 
     sol, s = initialize_profile(run_params, rho_initial,m_center[1], M_tot,p_outer=p_outer)
 
-    m_center = 0.5 .* (m_face[1:end-1] .+ m_face[2:end])   
     logm_center = log.(m_center)
     logm_face = log.(m_face)
     r_center = Vector{Float64}(undef, length(m_center))
@@ -143,31 +142,25 @@ function donor_remap_v2s!(s_new, mf_old, v2_old, s_old, mf_new)
 end
 
 function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
-    # Pick the new mass grid by equidistributing the refinement weight Q (which
-    # concentrates points where log r / log m / 1/P vary rapidly). Q is built
-    # from the CURRENT (old-grid) state.
+    # New mass grid equidistributes Q, evaluated on the current grid.
     Q_center = calc_Q!(state, run_params)
     logm_of_Q = PCHIPInterpolation(state.logm_center, Q_center)
     Q_range = collect(range(Q_center[1], stop = Q_center[end], length=gridpoints-1))
     logm_center_new = logm_of_Q(Q_range)
 
-    # Capture the OLD grid + fields before anything is overwritten in place.
     mf_old = copy(state.m_face)
     v2_old = copy(state.v2_center)
     s_old  = copy(state.s_center)
 
-    # Build the NEW mass grid: centers, then faces as center midpoints with the
-    # inner/outer boundaries (M_min, M_tot) preserved exactly.
+    # Faces are center midpoints; the boundaries M_min and M_tot are kept exactly.
     m_center_new = exp.(logm_center_new)
     mf_new = similar(state.m_face)
     mf_new[1]        = mf_old[1]
     mf_new[end]      = mf_old[end]
     mf_new[2:end-1] .= 0.5 .* (m_center_new[2:end] .+ m_center_new[1:end-1])
 
-    # Conservative v²-weighted remap of s onto the new cells (helper above).
     donor_remap_v2s!(state.s_center, mf_old, v2_old, s_old, mf_new)
 
-    # Commit the new grid geometry.
     state.m_center .= m_center_new
     state.m_face   .= mf_new
     state.logm_center .= log.(state.m_center)
@@ -175,9 +168,7 @@ function update_grid!(state::GridState, s_interp, sol, gridpoints, run_params)
     state.dm_cell .= diff(state.m_face)
     state.dm_between_centers .= diff(state.m_center)
 
-    # Resample the radial structure from the current HSE solution (sol returns
-    # log r, log P as functions of log m). r_face[1] is left to the next
-    # hse_update! (as in the static-grid path).
+    # Resample r and P from the current HSE solution; r_face[1] is set by the next hse_update!.
     for i in eachindex(state.logm_center)
         state.r_center[i] = exp(sol(state.logm_center[i])[1])
         state.P_center[i] = exp(sol(state.logm_center[i])[2])
@@ -199,11 +190,8 @@ function core_energy(P_c, ρ_c, r_c, r_min, m_f1, G)
     return U1 + W1
 end
 
-# Entropy interpolant s(ln m) for the structure solve, convect! and evaporation.
-# PCHIPInterpolation computes its slopes once, in the constructor (cache_parameters only governs the
-# polynomial-coefficient cache), while u and t are stored by reference. An interpolant built directly
-# on s_center therefore follows later edits to the node values but keeps the slopes of the profile it
-# was built on. Build from copies, and rebuild whenever s_center or the mass grid changes.
+# Entropy interpolant s(ln m). PCHIPInterpolation fixes its slopes at construction but stores the
+# nodes by reference, so build it from copies and rebuild whenever s_center or the grid changes.
 build_s_interp(s_center, logm_center) =
     PCHIPInterpolation(copy(s_center), copy(logm_center), extrapolation = ExtrapolationType.Constant)
 
@@ -287,17 +275,36 @@ function explicit_dsdt_conduction!(state::GridState, G, eps_diff, run_params)
     return dt_diffusion
 end
 
+"""
+    evolve(run_params, rho_initial; eps_diff=1, eps_kh=0.05, p_outer=0,
+           mass_min_frac=1e-6, velocity_bins=50, abstol=1e-5, reltol=1e-5)
+
+Evolve the halo with initial density profile `rho_initial(r)` (a function of
+radius) under the settings in [`RunParams`](@ref). Output is written to
+`run_params.snap_loc` as the run proceeds (read it with
+[`read_snapshot_file`](@ref)); the function returns `nothing`. The run stops at
+`run_params.t_end` or at the collapse criterion set in `run_params`.
+
+Keywords:
+- `p_outer`: pressure at the outer boundary `r_max`. Set this to the weight of
+  the material outside `r_max`; leaving it at `0` can make the outer shells
+  unstable (see `test/run_nfw.jl` for one way to compute it).
+- `mass_min_frac`: inner mass boundary as a fraction of the total mass inside
+  `r_max`. The profile is flattened to constant density inside it.
+- `eps_diff`: timestep as a fraction of the explicit diffusion stability limit.
+- `eps_kh`: timestep as a fraction of the shortest entropy-change timescale
+  (smaller is more accurate and slower).
+- `velocity_bins`: number of velocity bins in the evaporation calculation.
+- `abstol`, `reltol`: initial tolerances for the hydrostatic-equilibrium solves;
+  tightened automatically if a solve fails.
+"""
 function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_min_frac=1e-6,velocity_bins=50, abstol=1e-5, reltol=1e-5)
-    # Guard against the accidental converse of the InterpolatedCS n=NaN
-    # convention (common.jl): a PowerLawCS run must have a finite lci_s (i.e.
-    # a finite n), or calc_κ_log's hot path silently produces NaN conductivities.
+    # A PowerLawCS run with n = NaN would silently give NaN conductivities.
     if run_params.cs isa PowerLawCS && !isfinite(run_params.lci_s)
         error("RunParams.cs isa PowerLawCS but lci_s is not finite (n was likely set to NaN). " *
               "If you intended to use a non-power-law cross section, pass cs = RegularizedCS(σ0, w) (or another InterpolatedCS).")
     end
-    # The legacy rp.σ0 field (Kinv_smfp/Kinv_lmfp, analysis scripts) and the
-    # normalization carried inside cs must agree, or those helpers silently
-    # disagree with the hot path and the evaporation integral.
+    # Kinv_smfp/Kinv_lmfp read run_params.σ0, so it must match the cross section.
     if run_params.σ0 != run_params.cs.σ0
         error("RunParams.σ0 = $(run_params.σ0) does not match run_params.cs.σ0 = $(run_params.cs.σ0).")
     end
@@ -338,9 +345,8 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
 
     while t < run_params.t_end
         println("t:", t)
-        #The von Neumann Stability condition is very strict compared to the thermal timescale
-        #and calculating the evaporation rate is relatively expensive
-        #so we subscycle
+        # Subcycle conduction: the diffusion stability limit is far shorter than the thermal
+        # timescale, and the structure solve and evaporation are expensive.
 
         while t_sub <= dt_kh &&  t < run_params.t_end && 
             (t - t_prev_snap <= run_params.snap_interval_time && 
@@ -368,18 +374,14 @@ function evolve(run_params, rho_initial;eps_diff=1, eps_kh=0.05,p_outer=0,mass_m
         dlogp_core = logP_core - logP_core_old
         logP_guess = log(state.P_center[1]) + dlogp_core
         logP_core_old = logP_core
-        # the conduction/evaporation substeps above changed s_center (and, with evaporation, the
-        # mass grid), so the structure solve needs an interpolant built on the current profile
         s_interp = build_s_interp(state.s_center, state.logm_center)
         sol, logP_core, ρ_core, abstol, reltol, E_core, dE_implied =
             hse_update!(state, logP_guess, s_interp, E_core, G, abstol, reltol)
-        state.L_face[1] =  dE_implied/t_sub
+        state.L_face[1] = -dE_implied/t_sub
         convect!(s_interp, state.s_center, state.v2_center, state.m_center, run_params)
         if run_params.regrid
             update_grid!(state, s_interp, sol, gridpoints, run_params)
         end
-        # convect! may have flattened s_center and update_grid! moves every node; rebuild before
-        # calc_evaporation reads the interpolant
         s_interp = build_s_interp(state.s_center, state.logm_center)
 
         v2_esc_surface = 2 * (G * state.M_tot[]) / state.r_face[end] # neglecting the mass exterior to the integration region

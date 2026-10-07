@@ -3,12 +3,9 @@ using SIDMStars
 using SIDMStars: K5, K7, K9, Keff2, calc_κ_log
 using QuadGK
 
-# Verifies InterpolatedCS against the closed-form PowerLawCS path (common.jl /
-# transport.jl design doc, Verification item 1): build InterpolatedCS with a
-# power-law-shaped σ̂(v²) = (v²/w²)^(n/2) for n = 0, −2, −4 and check that K5,
-# K_eff^(2), and calc_κ_log agree with the PowerLawCS closed forms to ≲1e−4
-# relative — both inside the table and in the log-log linear extrapolation
-# region beyond it — over several decades of lρ.
+# InterpolatedCS built from a power-law shape σ̂(v²) = (v²/w²)^(n/2) must reproduce
+# the closed-form PowerLawCS K5, K_eff^(2) and calc_κ_log to ≲1e−4, inside the
+# table and in the extrapolation region.
 
 G  = 4.30091727003628e-6
 C  = 0.8620
@@ -36,7 +33,7 @@ lρ_grid = range(-20.0, 20.0, length=9)
     @test rp_pl.cs isa PowerLawCS
     @test rp_it.cs isa InterpolatedCS
     @test isfinite(rp_pl.lci_s) && isfinite(rp_pl.lci_l)
-    @test isnan(rp_it.lci_s)  # legacy field, unused by the InterpolatedCS path
+    @test isnan(rp_it.lci_s)  # power-law field, unused by InterpolatedCS
 
     lv2_grid = [log(v2_center) + Δ for Δ in offsets]
 
@@ -57,6 +54,29 @@ lρ_grid = range(-20.0, 20.0, length=9)
         κinv_it = calc_κ_log(lρ, lv2, rp_it)
         @test isapprox(κinv_it, κinv_pl; rtol = 1e-4)
     end
+end
+
+# LMFP K5/K7 mix (lmfp_K7_frac): the power-law (constant-factor) and interpolated (per-v² table)
+# paths must agree, a = 0 must be bitwise the K5 closure, and in the deep LMFP κ must scale by
+# K_lmfp/K5 = 1 + a·n/8 exactly (power law).
+@testset "lmfp_K7_frac mix (n=$n)" for n in (0.0, -2.0, -4.0)
+    a7 = 0.73
+    σ̂(v2) = (v2 / w^2)^(n / 2)
+    cs_interp = InterpolatedCS(σ̂, σ0; v2_center = w^2)
+    rp_pl0 = RunParams(; G = G, C = C, σ0 = σ0, w = w, n = n, common_kwargs...)
+    rp_plz = RunParams(; G = G, C = C, σ0 = σ0, w = w, n = n, lmfp_K7_frac = 0.0, common_kwargs...)
+    rp_pl  = RunParams(; G = G, C = C, σ0 = σ0, w = w, n = n, lmfp_K7_frac = a7, common_kwargs...)
+    rp_it  = RunParams(; G = G, C = C, σ0 = σ0, w = w, n = NaN, cs = cs_interp, lmfp_K7_frac = a7,
+                         common_kwargs...)
+    @test rp_plz.lci_l === rp_pl0.lci_l
+    for Δ in (-30.0, -1.0, 0.0, 1.0, 30.0), lρ in (-20.0, 0.0, 20.0)
+        lv2 = log(w^2) + Δ
+        @test isapprox(K7(exp(lv2), rp_it), K7(exp(lv2), rp_pl); rtol = 1e-4)
+        @test isapprox(calc_κ_log(lρ, lv2, rp_it), calc_κ_log(lρ, lv2, rp_pl); rtol = 1e-4)
+    end
+    # deep LMFP (small lρ, Kinv_lmfp ≫ Kinv_smfp): κ ∝ K_lmfp
+    lv2 = log(w^2)
+    @test isapprox(calc_κ_log(-60.0, lv2, rp_pl) / calc_κ_log(-60.0, lv2, rp_pl0), 1 + a7 * n / 8; rtol = 1e-6)
 end
 
 # Sanity check on the convenience constructor and the evolve() guard invariant
@@ -126,7 +146,7 @@ run_kwargs = (convection = ConvectionOff(), evaporation = EvaporationOff(),
 end
 
 # RegularizedCS has no closed-form comparison (that's the point — it's the
-# shape used by the companion DSMC runs), so this is a smoke test: evolve()
+# shape used by the companion KiSS-SIDM runs), so this is a smoke test: evolve()
 # must complete and hand back a finite, positive, radially sorted profile.
 @testset "RegularizedCS evolve() smoke test" begin
     reg = RegularizedCS(σ0, w)
