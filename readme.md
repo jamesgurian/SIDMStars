@@ -132,12 +132,12 @@ log-Gaussian bump in the summed resistivities,
 1/κ = (1/κ_SMFP + 1/κ_LMFP) · [1 + A exp(−u²/2W²)],   u = ln(κ_LMFP/κ_SMFP),
 ```
 
-with `A = bump_A` and `W = bump_W`. The LMFP branch carries the calibration constant `C`.
+with `A = bump_A` and `W = bump_W`. The LMFP branch has the standard calibration constant `C`.
 
 The cross section enters through Maxwellian velocity moments
 `Γ_p = σ0 K_p`, with `K_p ∝ ∫ y^(p+2) e^(−y²) σ̂ dy` (`K5`, `K7`, `K9` in the code). The SMFP
-branch uses the second-order Chapman–Enskog combination of K5, K7 and K9. The LMFP branch
-uses Γ₅ by default.
+conductivity uses the second-order Chapman–Enskog combination of K5, K7 and K9. The LMFP conductivity
+uses Γ₅ by default, but this may underestimate the collapse time for velocity-dependent cross sections in the deep LMFP. 
 
 `lmfp_K7_frac = a` replaces Γ₅ in the LMFP branch by the mixture
 
@@ -152,7 +152,7 @@ uses Γ₅ by default.
 - The mixture applies wherever the LMFP branch contributes. It is not gated by the local
   Knudsen number.
 - `a = 0` (the default) is the standard closure. `a = 0.73` fits deep-LMFP KiSS-SIDM runs of
-  cross sections that fall as v⁻⁴ at high velocity. Because the mixture is not gated, it also
+  cross sections that fall as v⁻⁴ at high velocity. This also
   slows collapse near the SMFP–LMFP crossover. In those v⁻⁴ tests, crossover collapse times came
   out 20–30% longer than KiSS-SIDM. For that reason it is off by default.
 - It works with every cross-section type. `InterpolatedCS` tabulates K7 alongside K5.
