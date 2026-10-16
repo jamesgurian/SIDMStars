@@ -48,6 +48,45 @@ snap["t"]            # snapshot times
 snap["rho"][1, :]    # central density vs. time
 ```
 
+### Calibrated shortcut
+
+`run_halo` does the same with the calibrated conductivity and production numerics filled in.
+It takes kpc, M_sun and km/s by default. Pass a number for a constant cross section, or any
+cross-section object:
+
+```julia
+ρ(r) = nfw_profile(1.18, 2.73e7, r)
+
+run_halo(ρ, 2.09e-10 * 50; t_end = 25.0, r_max = 30.0, snap_loc = "iso.hdf5")
+run_halo(ρ, RegularizedCS(1e-6, 10.0); t_end = 25.0, r_max = 30.0, snap_loc = "vdep.hdf5")
+run_halo(ρ, RegularizedCS(1e-6, 10.0); calib = :lmfp, t_end = 25.0, r_max = 30.0,
+         snap_loc = "vdep_lmfp.hdf5")
+```
+
+For a velocity-dependent σ, `calib` picks the LMFP velocity weighting:
+
+- `:smfp` (default): standard Γ₅ closure, `lmfp_K7_frac = 0`. Use it for halos in the SMFP
+  regime or near the SMFP–LMFP crossover.
+- `:lmfp`: Γ₅/Γ₇ mixture, `lmfp_K7_frac = 0.73`, fitted to deep-LMFP KiSS-SIDM runs. Near
+  the crossover it gives collapse times 20–30% too long.
+
+For constant σ, Γ₇ = Γ₅, so `calib` has no effect.
+
+| Setting | Default |
+|---------|---------|
+| `C`, `bump_A`, `bump_W` | `0.8505`, `1.31`, `1.68` (the `RunParams` defaults), for every cross section |
+| `calib` | `:smfp` (`lmfp_K7_frac = 0`); `:lmfp` gives `lmfp_K7_frac = 0.73` (see "Conductivity and the Γ₅/Γ₇ mixture" below) |
+| `G` | `4.30091727e-6` (kpc (km/s)² / M_sun) |
+| `p_outer` | `calc_psurf(ρ, r_max, G)` |
+| `r_min`, `gridpoints` | `1e-6 r_max`, `200` |
+| `snap_interval_time`, `snap_interval_density` | `t_end/1000`, `0.1` |
+| `convection`, `evaporation` | `ConvectionOn()`, `EvaporationOff()` |
+| `eps_kh`, `eps_diff`, `mass_min_frac` | `0.01`, `0.5`, `1e-7` |
+
+Any of these can be overridden by keyword, and other `RunParams` keywords are passed
+through. `run_halo` returns the `RunParams` it used. To get the parameters without running,
+call `calibrated_params(cs; t_end, r_max, snap_loc, ...)`.
+
 More examples are in `test/` (`run_nfw.jl`, `run_diemer_kravtsov.jl`, `run_isothermal.jl`).
 Each exported name has a docstring, so `?evolve` or `?RunParams` in the REPL shows the
 details.
@@ -76,6 +115,8 @@ must be in the same system. The examples use kpc, M_sun and km/s:
 |----------|-------------|
 | `evolve(run_params, rho_initial; kwargs...)` | Build the initial state from `rho_initial(r)`, evolve it, and write snapshots to `run_params.snap_loc`. Returns `nothing`. |
 | `initialize_profile(run_params, rho_initial; p_outer, mass_min_frac)` | Only the initial hydrostatic-equilibrium solve. Returns `(sol, s_func, M_tot)`. `evolve` calls it for you. |
+| `run_halo(rho_initial, cs; calib=:smfp, t_end, r_max, snap_loc, kwargs...)` | `evolve` with the calibrated defaults. `calib = :lmfp` selects the deep-LMFP calibration for velocity-dependent σ (see [Calibrated shortcut](#calibrated-shortcut)). Returns the `RunParams` used. |
+| `calibrated_params(cs; calib=:smfp, t_end, r_max, snap_loc, kwargs...)` | The `RunParams` that `run_halo` uses. |
 | `calc_psurf(rho_func, r_max, G)` | Pressure at `r_max` from the weight of the material outside it (hydrostatic equilibrium). Pass it as `p_outer`. |
 
 Keyword arguments to `evolve`:
@@ -114,7 +155,7 @@ All run settings, passed as keyword arguments.
 | `convection` | `ConvectionOn()` | Or `ConvectionOff()`. |
 | `evaporation` | `EvaporationOn()` | Or `EvaporationOff()`. |
 | `cs` | `PowerLawCS(σ0, w, n)` | Cross-section object (see below). |
-| `C` | `0.8620` | Conductivity calibration constant. |
+| `C` | `0.8505` | Conductivity calibration constant. |
 | `bump_A`, `bump_W` | `1.31`, `1.68` | Conductivity calibration constants. |
 | `collapse_density_factor` | `Inf` | Stop early once the density at enclosed mass `collapse_mass_frac * M_tot` reaches this multiple of its initial value. |
 | `collapse_mass_frac` | `0.0` | See above. `0` tracks the innermost cell. |
@@ -159,6 +200,13 @@ uses Γ₅ by default, but this may underestimate the collapse time for velocity
 
 ```julia
 params = RunParams(; G, σ0, w, n = -4.0, lmfp_K7_frac = 0.73, ...)
+```
+
+With `run_halo` or `calibrated_params`, choose the mixture with `calib = :lmfp`
+(`a = 0.73`) instead of `:smfp` (`a = 0`, the default):
+
+```julia
+run_halo(ρ, RegularizedCS(σ0, w); calib = :lmfp, t_end, r_max, snap_loc)
 ```
 
 ### Cross sections

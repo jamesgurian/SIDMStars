@@ -167,7 +167,7 @@ Optional keywords:
 - `evaporation = EvaporationOn()`: or `EvaporationOff()`.
 - `cs = PowerLawCS(σ0=σ0, w=w, n=n)`: any [`CrossSection`](@ref). With a
   non-power-law `cs`, set `n = NaN`.
-- `C = 0.8620`, `bump_A = 1.31`, `bump_W = 1.68`: conductivity calibration constants.
+- `C = 0.8505`, `bump_A = 1.31`, `bump_W = 1.68`: conductivity calibration constants.
 - `collapse_density_factor = Inf`, `collapse_mass_frac = 0.0`: stop early once
   the density at enclosed mass `collapse_mass_frac * M_tot` has grown by
   `collapse_density_factor` over its initial value.
@@ -186,8 +186,9 @@ The remaining fields are derived from the above; do not set them.
     convection::TConv = ConvectionOn()
     evaporation::TEvap = EvaporationOn()
     G::Float64
-    # LMFP conductivity calibration constant (Eq. kappa_lmfp).
-    C::Float64 = 0.8620
+    # LMFP conductivity calibration constant (Eq. kappa_lmfp), the deep-LMFP
+    # anchor that goes with the (A, W) bump below.
+    C::Float64 = 0.8505
     σ0::Float64
     w::Float64
     n::Float64

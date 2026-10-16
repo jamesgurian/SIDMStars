@@ -31,6 +31,7 @@ include("init.jl")
 include("snapshot.jl")
 include("convect.jl")
 include("evolve.jl")
+include("calibrated.jl")
 
 
 
@@ -62,6 +63,8 @@ export dk_profile
 export setup_dk_profile
 export calc_psurf
 export evolve
+export calibrated_params
+export run_halo
 export read_snapshot_file
 
 

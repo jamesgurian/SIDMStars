@@ -7,7 +7,7 @@ using SIDMStars: K5, K7, K9, Keff2, calc_κ_log
 # table and in the extrapolation region.
 
 G  = 4.30091727003628e-6
-C  = 0.8620
+C  = 0.8505
 σ0 = 1e-6
 w  = 10.0
 
